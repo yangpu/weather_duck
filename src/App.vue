@@ -133,6 +133,13 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+
+// 扩展Window接口以支持markLoaded函数
+declare global {
+  interface Window {
+    markLoaded?: (component: string) => void;
+  }
+}
 import { DateUtils } from './utils/dateUtils'
 import WeatherCard from './components/WeatherCard.vue'
 import WeatherLineChart from './components/WeatherLineChart.vue'
@@ -291,6 +298,11 @@ async function fetchAll() {
     // 从全局数据管理器获取数据并按日期倒序排列
     const rawWeatherList = globalDataManager.getWeatherList()
     weatherList.value = [...rawWeatherList].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+    // 标记天气数据已加载完成
+    if (window.markLoaded) {
+      window.markLoaded('weather');
+    }
 
     const today = new Date().toISOString().slice(0, 10)
     try {
@@ -473,7 +485,7 @@ async function handleLoadMore() {
     const newEndDateStr = DateUtils.formatDate(newEndDate)
     
     // 获取新的天气数据
-    const newWeatherData = await weatherService.getWeatherByDateRange(
+    const newWeatherData = await weatherService.getWeatherForDateRange(
       latitude.value,
       longitude.value,
       newStartDateStr,
@@ -544,6 +556,11 @@ onMounted(async () => {
 
   
   await fetchAll()
+  
+  // 标记日记数据已加载完成（初始化时）
+  if (window.markLoaded) {
+    window.markLoaded('diary');
+  }
 })
 
 onUnmounted(() => {

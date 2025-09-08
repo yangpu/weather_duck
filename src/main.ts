@@ -73,3 +73,8 @@ if ('Notification' in window && Notification.permission === 'default') {
 }
 
 app.mount('#app')
+
+// 标记应用已挂载完成
+if (window.markLoaded) {
+  window.markLoaded('app');
+}
