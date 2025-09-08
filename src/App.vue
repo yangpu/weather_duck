@@ -66,6 +66,7 @@
           />
           <LoadMoreCard 
             :loading="loadingMore"
+            :current-start-date="startDate"
             @load-more="handleLoadMore"
           />
         </div>
@@ -473,16 +474,16 @@ async function handleLoadMore() {
   
   loadingMore.value = true
   try {
-    // 计算新的开始日期（当前endDate往前7天）
-    const currentEndDate = new Date(endDate.value)
-    const newEndDate = new Date(currentEndDate)
-    newEndDate.setDate(currentEndDate.getDate() - 1) // 新的结束日期是当前结束日期的前一天
+    // 计算新的日期范围（从当前开始日期往前推7天）
+    const currentStartDate = new Date(startDate.value)
+    const newEndDate = new Date(currentStartDate)
+    newEndDate.setDate(currentStartDate.getDate() - 1) // 新的结束日期是当前开始日期的前一天
     
     const newStartDate = new Date(newEndDate)
     newStartDate.setDate(newEndDate.getDate() - 6) // 往前7天
     
-    const newStartDateStr = DateUtils.formatDate(newStartDate)
-    const newEndDateStr = DateUtils.formatDate(newEndDate)
+    const newStartDateStr = newStartDate.toISOString().slice(0, 10)
+    const newEndDateStr = newEndDate.toISOString().slice(0, 10)
     
     // 获取新的天气数据
     const newWeatherData = await weatherService.getWeatherForDateRange(
