@@ -4,7 +4,7 @@
       <!-- Header Left: Logo + Title -->
       <div class="header-left" @click="$emit('settings')" title="关于天气小鸭">
         <div class="logo-container">
-          <img src="/weather_duck_logo.png" alt="天气小鸭" class="logo" />
+          <img src="/weather_duck_rj_logo.jpeg" alt="天气小鸭" class="logo" />
         </div>
         <div class="title-container">
           <h1 class="app-title">{{ title }}</h1>

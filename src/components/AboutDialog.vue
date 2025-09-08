@@ -10,7 +10,7 @@
     <div class="about-content">
       <!-- 天气小鸭图片 -->
       <div class="duck-image-section">
-        <img src="/weather_duck.png" alt="天气小鸭" class="duck-image" />
+        <img src="/weather_duck.jpg" alt="天气小鸭" class="duck-image" />
         <h2 class="app-title">天气小鸭 · 暑假天气日历</h2>
       </div>
 
