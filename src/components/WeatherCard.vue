@@ -80,7 +80,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { WeatherData } from '../types/weather'
 import { DateUtils } from '../utils/dateUtils'
-import { diaryService } from '../services/diaryService.js'
+import { unifiedCacheService } from '../services/unifiedCacheService.js'
 import type { WeatherDiary } from '../config/supabase'
 import { truncateText } from '../utils/textUtils'
 
@@ -106,31 +106,20 @@ const isToday = computed(() => {
 const hasDiary = ref(false)
 const diaryData = ref<WeatherDiary | null>(null)
 
-async function loadDiary() {
+function loadDiary() {
   try {
-    // 优先从全局数据管理器获取数据
-    const globalManager = (window as any).__globalDataManager
-    if (globalManager) {
-      const diary = globalManager.getDiary(props.weather.date)
-      hasDiary.value = !!diary
-      diaryData.value = diary
-      return
-    }
-
-    // 备用：从全局缓存获取
-    const globalCache = (window as any).__diaryCache
-    if (globalCache && globalCache.has(props.weather.date)) {
-      const diary = globalCache.get(props.weather.date)
-      hasDiary.value = !!diary
-      diaryData.value = diary
-      return
-    }
-
-    // 最后才发起请求（理论上不应该到这里）
-    console.warn(`WeatherCard: 缓存未命中，发起请求 ${props.weather.date}`)
-    const diary = await diaryService.getDiaryByDate(props.weather.date)
+    // 优化：优先从统一缓存服务获取数据
+    const diary = unifiedCacheService.getDiaryData(props.weather.date)
     hasDiary.value = !!diary
     diaryData.value = diary
+    
+    if (diary) {
+      console.log(`📦 WeatherCard: 从统一缓存获取日记 ${props.weather.date}`)
+    } else {
+      console.log(`📦 WeatherCard: 日记不存在 ${props.weather.date}`)
+    }
+    
+    return
   } catch (error) {
     console.warn(`获取日记失败 (${props.weather.date}):`, error)
     hasDiary.value = false
@@ -160,17 +149,23 @@ function onDiaryUpdated(ev: Event) {
   }
 }
 
-onMounted(async () => {
-  await loadDiary()
+onMounted(() => {
+  loadDiary()
   window.addEventListener('diary:updated', onDiaryEvent)
   window.addEventListener('diaries:loaded', onDiariesLoaded)
   window.addEventListener('diary:updated', onDiaryUpdated)
+  
+  // 监听统一缓存服务的数据就绪事件
+  window.addEventListener('diaries:data:ready', onDiariesLoaded)
+  window.addEventListener('unified:data:ready', onDiariesLoaded)
 })
 
 onUnmounted(() => {
   window.removeEventListener('diary:updated', onDiaryEvent)
   window.removeEventListener('diaries:loaded', onDiariesLoaded)
   window.removeEventListener('diary:updated', onDiaryUpdated)
+  window.removeEventListener('diaries:data:ready', onDiariesLoaded)
+  window.removeEventListener('unified:data:ready', onDiariesLoaded)
 })
 
 function getDiaryPreview(content: string): string {

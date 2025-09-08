@@ -155,7 +155,7 @@ import { WeatherApiService } from './services/weatherApi'
 
 import { weatherService } from './services/weatherService.js'
 import { diaryService } from './services/diaryService.js'
-import { globalDataManager } from './services/globalDataManager.js'
+import { unifiedCacheService } from './services/unifiedCacheService.js'
 import type { WeatherData } from './types/weather'
 import { GeocodingService } from './services/geocoding'
 import { initializeSupabase } from './utils/initSupabase'
@@ -288,47 +288,27 @@ async function fetchAll() {
   }
   loading.value = true
   try {
-    // 使用全局数据管理器，确保所有数据通过缓存加载
-    await globalDataManager.initialize(
+    // 使用统一缓存服务，优化天气和日记数据请求
+    const { weatherData } = await unifiedCacheService.initializeData(
       startDate.value,
       endDate.value,
       latitude.value,
       longitude.value
     )
     
-    // 从全局数据管理器获取数据并按日期倒序排列
-    const rawWeatherList = globalDataManager.getWeatherList()
-    weatherList.value = [...rawWeatherList].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    // 按日期倒序排列显示
+    weatherList.value = [...weatherData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
     // 标记天气数据已加载完成
     if (window.markLoaded) {
       window.markLoaded('weather');
     }
 
-    const today = new Date().toISOString().slice(0, 10)
-    try {
-      const current = await weatherService.getCurrentWeather(
-        latitude.value,
-        longitude.value
-      )
-      const idx = weatherList.value.findIndex((d) => d.date === today)
-      if (idx >= 0 && current) {
-        const merged: WeatherData = {
-          ...weatherList.value[idx],
-          temperature: {
-            ...weatherList.value[idx].temperature,
-            current: Math.round(current.temperature?.current ?? weatherList.value[idx].temperature.current)
-          },
-          windSpeed: Math.round((current.windSpeed as number) ?? weatherList.value[idx].windSpeed),
-          windDirection: (current.windDirection as string) ?? weatherList.value[idx].windDirection,
-          description: (current.description as string) ?? weatherList.value[idx].description,
-          icon: (current.icon as string) ?? weatherList.value[idx].icon,
-          cloudCover: (current.cloudCover as number) ?? weatherList.value[idx].cloudCover,
-          humidity: (current.humidity as number) ?? weatherList.value[idx].humidity
-        }
-        weatherList.value.splice(idx, 1, merged)
-      }
-    } catch {}
+    console.log('✅ App: 数据加载完成', {
+      weatherCount: weatherData.length,
+      dateRange: `${startDate.value} ~ ${endDate.value}`
+    })
+
   } catch (e: any) {
     errorMessage.value = e?.message || '获取天气失败'
   } finally {
@@ -371,31 +351,20 @@ async function preloadDiariesOverview(startDate: string, endDate: string) {
 }
 */
 
-// 处理天气卡片点击 - 修复重复请求和显示逻辑
-async function handleWeatherCardClick(weather: WeatherData) {
+// 处理天气卡片点击 - 优化：使用统一缓存服务
+function handleWeatherCardClick(weather: WeatherData) {
   console.log('🎯 卡片点击:', weather.date)
   
   // 先设置选中的天气数据
   selectedWeather.value = weather
   
-  // 检查缓存，决定显示哪个对话框
-  let diary = null
+  // 从统一缓存服务获取日记数据
+  const diary = unifiedCacheService.getDiaryData(weather.date)
+  console.log('📦 从统一缓存获取日记:', diary)
   
-  // 优先从缓存获取
-  if (diaryCache.value.has(weather.date)) {
-    diary = diaryCache.value.get(weather.date)
-    console.log('📦 从缓存获取日记:', diary)
-  } else {
-    // 缓存中没有，从数据库加载
-    console.log('🔍 缓存中没有，从数据库加载日记')
-    try {
-      diary = await diaryService.getDiaryByDate(weather.date)
-      diaryCache.value.set(weather.date, diary)
-      console.log('📦 从数据库获取日记:', diary)
-    } catch (e) {
-      console.warn('加载日记失败:', e)
-      diary = null
-    }
+  // 同时更新本地缓存（兼容性）
+  if (diary) {
+    diaryCache.value.set(weather.date, diary)
   }
   
   // 根据日记内容决定显示查看还是编辑页面
@@ -445,9 +414,9 @@ function handleEditDateChange(date: string) {
 async function handleDiarySaved(date: string, content: string) {
   console.log(`日记已保存: ${date}`, content ? '有内容' : '已删除')
   
-  // 使用全局数据管理器刷新该日期的数据
+  // 使用统一缓存服务刷新该日期的数据
   try {
-    await globalDataManager.refreshDate(date)
+    await unifiedCacheService.refreshDiaryData(date)
     
     // 同时更新本地缓存（兼容性）
     const diary = await diaryService.refreshDiaryByDate(date)

@@ -7,7 +7,7 @@ import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
 import * as echarts from 'echarts'
 import type { ECharts as TECharts, EChartsOption, LineSeriesOption, BarSeriesOption } from 'echarts'
 import type { WeatherData } from '../types/weather'
-import { diaryService } from '../services/diaryService.js'
+import { unifiedCacheService } from '../services/unifiedCacheService.js'
 import { truncateText } from '../utils/textUtils'
 
 interface Props {
@@ -35,21 +35,28 @@ let customTooltip: HTMLDivElement | null = null
 const diaryMoods = ref<Record<string, string>>({})
 const diaryData = ref<Record<string, any>>({})
 
-// 获取日记数据
-async function loadDiaryMoods() {
+// 获取日记数据 - 优化：使用统一缓存服务，避免重复请求
+function loadDiaryMoods() {
   try {
-    const diaries = await diaryService.getDiaries()
+    // 优先从统一缓存服务获取数据
+    const diaries = unifiedCacheService.getDiaryData()
     const moodMap: Record<string, string> = {}
     const dataMap: Record<string, any> = {}
+    
     diaries.forEach((diary: any) => {
       if (diary.mood) {
         moodMap[diary.date] = diary.mood
       }
       dataMap[diary.date] = diary
     })
+    
     diaryMoods.value = moodMap
     diaryData.value = dataMap
     
+    console.log('📊 WeatherLineChart: 从统一缓存加载日记数据', {
+      diariesCount: diaries.length,
+      moodsCount: Object.keys(moodMap).length
+    })
 
   } catch (error) {
     console.error('加载日记数据失败:', error)
@@ -557,8 +564,8 @@ async function renderChart() {
     return
   }
   
-  // 每次渲染前都重新加载日记心情数据
-  await loadDiaryMoods()
+  // 每次渲染前都重新加载日记心情数据（优化：同步加载，避免异步等待）
+  loadDiaryMoods()
   
   if (!chart) {
     chart = echarts.init(chartContainer.value)
@@ -574,10 +581,10 @@ function handleResize() {
   chart?.resize()
 }
 
-// 处理日记更新事件
-async function handleDiaryUpdate(_event: any) {
-  // 重新加载日记数据并更新图表
-  await loadDiaryMoods()
+// 处理日记更新事件 - 优化：同步处理，提高响应速度
+function handleDiaryUpdate(_event: any) {
+  // 重新加载日记数据并更新图表（优化：同步加载）
+  loadDiaryMoods()
   if (chart) {
     const option = getOption(props.data || [])
     chart.setOption(option)
@@ -712,11 +719,17 @@ onMounted(() => {
   
   // 监听日记更新事件
   window.addEventListener('diary:updated', handleDiaryUpdate)
+  
+  // 监听统一缓存服务的数据就绪事件
+  window.addEventListener('diaries:data:ready', handleDiaryUpdate)
+  window.addEventListener('unified:data:ready', handleDiaryUpdate)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('diary:updated', handleDiaryUpdate)
+  window.removeEventListener('diaries:data:ready', handleDiaryUpdate)
+  window.removeEventListener('unified:data:ready', handleDiaryUpdate)
   chart?.dispose()
   chart = null
   
@@ -729,8 +742,8 @@ onBeforeUnmount(() => {
 
 watch(
   () => [props.data, props.showCurrent, props.height],
-  async () => {
-    await renderChart()
+  () => {
+    renderChart()
   },
   { deep: true, immediate: false }
 )
@@ -738,10 +751,10 @@ watch(
 // 单独监听 props.data 的变化，确保日期范围改变时能及时更新
 watch(
   () => props.data,
-  async (newData, oldData) => {
+  (newData, oldData) => {
     if (newData && oldData && newData.length !== oldData.length) {
       // 数据点数量变化时，强制重新渲染
-      await renderChart()
+      renderChart()
     } else if (newData && oldData) {
       // 检查日期是否有变化
       const newDates = newData.map(d => d.date).sort()
@@ -750,7 +763,7 @@ watch(
                           newDates.some((date, index) => date !== oldDates[index])
       
       if (datesChanged) {
-        await renderChart()
+        renderChart()
       }
     }
   },
