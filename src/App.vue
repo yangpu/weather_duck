@@ -199,6 +199,44 @@ const selectedWeather = ref<WeatherData | null>(null)
 // About对话框状态
 const aboutVisible = ref(false)
 
+// 滚动条宽度计算和处理
+const scrollbarWidth = ref(0)
+
+// 计算滚动条宽度
+function calculateScrollbarWidth() {
+  const outer = document.createElement('div')
+  outer.style.visibility = 'hidden'
+  outer.style.overflow = 'scroll'
+  outer.style.msOverflowStyle = 'scrollbar'
+  document.body.appendChild(outer)
+
+  const inner = document.createElement('div')
+  outer.appendChild(inner)
+
+  const scrollbarWidth = outer.offsetWidth - inner.offsetWidth
+  outer.parentNode?.removeChild(outer)
+
+  return scrollbarWidth
+}
+
+// 设置CSS变量
+function setScrollbarWidth() {
+  const width = calculateScrollbarWidth()
+  scrollbarWidth.value = width
+  document.documentElement.style.setProperty('--scrollbar-width', `${width}px`)
+}
+
+// 监听对话框状态变化
+function handleDialogStateChange() {
+  const hasVisibleDialog = diaryViewVisible.value || diaryEditVisible.value || aboutVisible.value
+  
+  if (hasVisibleDialog) {
+    document.body.classList.add('dialog-open')
+  } else {
+    document.body.classList.remove('dialog-open')
+  }
+}
+
 
 
 // 计算标题中显示的城市和省份
@@ -353,6 +391,11 @@ watch(weatherList, (newWeatherList) => {
   console.log('🔄 全局天气列表已更新，长度:', newWeatherList.length)
 }, { immediate: true, deep: true })
 
+// 监听对话框状态变化，处理滚动条宽度
+watch([diaryViewVisible, diaryEditVisible, aboutVisible], () => {
+  handleDialogStateChange()
+}, { immediate: true })
+
 // 批量预加载日记概览（已被全局数据管理器替代，保留以防需要）
 /*
 async function preloadDiariesOverview(startDate: string, endDate: string) {
@@ -391,6 +434,8 @@ function handleWeatherCardClick(weather: WeatherData) {
   // 同时更新本地缓存（兼容性）
   if (diary) {
     diaryCache.value.set(weather.date, diary)
+    // 更新全局缓存引用
+    ;(window as any).__diaryCache = diaryCache.value
   }
   
   // 根据日记内容决定显示查看还是编辑页面
@@ -729,11 +774,17 @@ function handleAppInstalled() {
 
 
 onMounted(async () => {
+  // 初始化滚动条宽度计算
+  setScrollbarWidth()
+  
   // 初始化Supabase
   await initializeSupabase()
   
   // 初始化全局数据管理器
   ;(window as any).__globalDataManager = globalDataManager
+  
+  // 暴露统一缓存服务到全局
+  ;(window as any).__unifiedCacheService = unifiedCacheService
   
   try {
     const loc = await WeatherApiService.getCurrentLocation()
@@ -773,6 +824,33 @@ onUnmounted(() => {
   // 清理工作已移至AppHeader组件
 })
 </script>
+
+<style>
+/* 全局样式：固定滚动条宽度，防止对话框显示时页面闪动 */
+html {
+  /* 计算滚动条宽度并预留空间 */
+  --scrollbar-width: calc(100vw - 100%);
+}
+
+body {
+  /* 始终保持右侧padding，补偿滚动条宽度 */
+  padding-right: var(--scrollbar-width);
+  /* 当TDesign对话框隐藏滚动条时，保持页面宽度不变 */
+  box-sizing: border-box;
+}
+
+/* 当body设置overflow:hidden时（对话框显示），保持padding */
+body[style*="overflow: hidden"] {
+  padding-right: var(--scrollbar-width) !important;
+}
+
+/* 确保对话框遮罩层不受padding影响 */
+.t-dialog__mask,
+.t-overlay {
+  margin-right: calc(-1 * var(--scrollbar-width));
+  width: calc(100% + var(--scrollbar-width));
+}
+</style>
 
 <style scoped>
 

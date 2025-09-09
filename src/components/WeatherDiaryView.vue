@@ -103,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { WeatherData } from '../types/weather'
 import { DateUtils } from '../utils/dateUtils'
 import { diaryService } from '../services/diaryService.js'
@@ -129,6 +129,32 @@ const diaryData = ref<WeatherDiary | null>(null)
 const imagePreviewVisible = ref(false)
 const previewIndex = ref(0)
 const isRefreshing = ref(false)
+
+// 立即检查并设置日记数据
+function initializeDiaryData() {
+  if (!props.weather?.date) {
+    console.log('❌ WeatherDiaryView: 没有天气日期数据')
+    return false
+  }
+  
+  const globalCache = (window as any).__diaryCache
+  console.log('🔍 WeatherDiaryView: 检查全局缓存', {
+    date: props.weather.date,
+    hasGlobalCache: !!globalCache,
+    cacheSize: globalCache ? globalCache.size : 0,
+    hasDateInCache: globalCache ? globalCache.has(props.weather.date) : false
+  })
+  
+  if (globalCache && globalCache.has(props.weather.date)) {
+    const cachedDiary = globalCache.get(props.weather.date)
+    console.log('📦 WeatherDiaryView立即初始化日记数据:', props.weather.date, cachedDiary)
+    diaryData.value = cachedDiary
+    return true
+  }
+  
+  console.log('❌ WeatherDiaryView: 全局缓存中没有找到数据')
+  return false
+}
 
 const date = computed(() => {
   if (!props.weather || !props.weather.date) return ''
@@ -161,15 +187,32 @@ const hasNextDay = computed(() => {
 
 // 监听对话框打开，加载日记
 watch(() => props.visible, async (newVisible) => {
+  console.log('👀 WeatherDiaryView: visible变化', newVisible, 'weather.date:', props.weather?.date)
   if (newVisible) {
-    await loadDiary()
+    // 立即尝试初始化数据，如果失败再异步加载
+    if (!initializeDiaryData()) {
+      await loadDiary()
+    }
+  }
+}, { immediate: true })
+
+// 组件挂载时立即检查数据
+onMounted(() => {
+  console.log('🚀 WeatherDiaryView: 组件挂载', 'visible:', props.visible, 'weather.date:', props.weather?.date)
+  if (props.visible && props.weather?.date) {
+    if (!initializeDiaryData()) {
+      loadDiary()
+    }
   }
 })
 
 // 监听天气数据变化，重新加载日记
 watch(() => props.weather, async (newWeather) => {
   if (newWeather && props.visible) {
-    await loadDiary()
+    // 立即尝试初始化数据，如果失败再异步加载
+    if (!initializeDiaryData()) {
+      await loadDiary()
+    }
   }
 }, { deep: true })
 
@@ -181,7 +224,26 @@ async function loadDiary(forceRefresh = false) {
   }
   
   try {
-    const diary = await diaryService.getDiaryByDate(props.weather.date, forceRefresh)
+    let diary = null
+    
+    // 优先从统一缓存服务获取
+    const unifiedCacheService = (window as any).__unifiedCacheService
+    if (unifiedCacheService && !forceRefresh) {
+      diary = unifiedCacheService.getDiaryData(props.weather.date)
+      console.log('📦 WeatherDiaryView从统一缓存获取日记:', props.weather.date, diary)
+    }
+    
+    // 如果缓存中没有或需要强制刷新，从数据库获取
+    if (!diary || forceRefresh) {
+      diary = await diaryService.getDiaryByDate(props.weather.date, forceRefresh)
+      console.log('🔄 WeatherDiaryView从数据库获取日记:', props.weather.date, diary)
+      
+      // 更新统一缓存
+      if (unifiedCacheService && diary) {
+        unifiedCacheService.setDiaryData(props.weather.date, diary)
+      }
+    }
+    
     diaryData.value = diary
   } catch (e) {
     console.warn('加载日记失败:', e)
