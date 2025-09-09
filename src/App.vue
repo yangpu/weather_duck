@@ -140,7 +140,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 
 // 扩展Window接口以支持markLoaded函数
 declare global {
@@ -163,6 +163,7 @@ import { WeatherApiService } from './services/weatherApi'
 import { weatherService } from './services/weatherService.js'
 import { diaryService } from './services/diaryService.js'
 import { unifiedCacheService } from './services/unifiedCacheService.js'
+import { globalDataManager } from './services/globalDataManager.js'
 import type { WeatherData } from './types/weather'
 import { GeocodingService } from './services/geocoding'
 import { initializeSupabase } from './utils/initSupabase'
@@ -308,6 +309,17 @@ async function fetchAll() {
     // 按日期倒序排列显示
     weatherList.value = [...weatherData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
+    // 确保全局数据管理器也被正确初始化
+    const globalManager = (window as any).__globalDataManager
+    if (globalManager) {
+      await globalManager.initialize(
+        startDate.value,
+        endDate.value,
+        latitude.value,
+        longitude.value
+      )
+    }
+
     // 标记天气数据已加载完成
     if (window.markLoaded) {
       window.markLoaded('weather');
@@ -334,7 +346,12 @@ const diaryCache = ref<Map<string, any>>(new Map())
 
 // 将缓存和天气数据暴露给全局，供WeatherCard和WeatherDiaryView使用
 ;(window as any).__diaryCache = diaryCache.value
-;(window as any).__weatherList = weatherList.value
+
+// 监听 weatherList 变化，同步更新全局变量
+watch(weatherList, (newWeatherList) => {
+  ;(window as any).__weatherList = newWeatherList
+  console.log('🔄 全局天气列表已更新，长度:', newWeatherList.length)
+}, { immediate: true, deep: true })
 
 // 批量预加载日记概览（已被全局数据管理器替代，保留以防需要）
 /*
@@ -508,6 +525,12 @@ async function handleLoadNext(startDateStr, endDateStr, isForecast) {
       const allData = [...weatherList.value, ...newWeatherData]
       weatherList.value = allData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       
+      // 更新全局数据管理器
+      const globalManager = (window as any).__globalDataManager
+      if (globalManager) {
+        globalManager.dataCache.set('weather', weatherList.value)
+      }
+      
       // 更新结束日期
       endDate.value = endDateStr
       dateRangeValue.value = [startDate.value, endDate.value]
@@ -592,6 +615,12 @@ async function handleLoadPrevious(startDateStr: string, endDateStr: string) {
       // 将新数据添加到现有数据中，并按日期倒序排列
       const allData = [...weatherList.value, ...newWeatherData]
       weatherList.value = allData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      
+      // 更新全局数据管理器
+      const globalManager = (window as any).__globalDataManager
+      if (globalManager) {
+        globalManager.dataCache.set('weather', weatherList.value)
+      }
       
       // 更新开始日期
       startDate.value = startDateStr
@@ -702,6 +731,9 @@ function handleAppInstalled() {
 onMounted(async () => {
   // 初始化Supabase
   await initializeSupabase()
+  
+  // 初始化全局数据管理器
+  ;(window as any).__globalDataManager = globalDataManager
   
   try {
     const loc = await WeatherApiService.getCurrentLocation()

@@ -284,6 +284,12 @@ const date = computed(() => {
 
 // 获取全局天气数据列表用于导航
 const globalWeatherList = computed(() => {
+  // 优先从全局数据管理器获取
+  const globalManager = (window as any).__globalDataManager
+  if (globalManager) {
+    return globalManager.getWeatherList() || []
+  }
+  // 兼容性：从全局变量获取
   return (window as any).__weatherList || []
 })
 
