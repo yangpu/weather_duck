@@ -1,5 +1,5 @@
 <template>
-  <t-card class="weather-card" :class="{ 'today': isToday }" @click="handleCardClick">
+  <t-card class="weather-card" :class="{ 'today': isToday }" :data-date="weather.date" @click="handleCardClick">
     <div class="weather-header">
       <div class="date-info">
         <div class="date">{{ formatDate(weather.date) }}</div>
@@ -204,20 +204,58 @@ function handleCardClick() {
 <style scoped>
 .weather-card {
   min-height: 200px;
-  transition: all 3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 12px;
   cursor: pointer;
   position: relative;
+  border: 1px solid #e7e7e7;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.weather-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(0, 82, 217, 0.05) 0%, rgba(0, 82, 217, 0.02) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
 }
 
 .weather-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 82, 217, 0.15);
+  border-color: #0052d9;
+}
+
+.weather-card:hover::before {
+  opacity: 1;
+}
+
+.weather-card:active {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 25px rgba(0, 82, 217, 0.2);
 }
 
 .weather-card.today {
   border: 2px solid #0052d9;
   background: linear-gradient(135deg, #f0f7ff 0%, #e6f3ff 100%);
+  box-shadow: 0 4px 20px rgba(0, 82, 217, 0.1);
+}
+
+.weather-card.today:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 45px rgba(0, 82, 217, 0.25);
+  border-color: #003ba3;
+}
+
+.weather-card.today::before {
+  background: linear-gradient(135deg, rgba(0, 82, 217, 0.08) 0%, rgba(0, 82, 217, 0.04) 100%);
+  opacity: 1;
 }
 
 .weather-header {
@@ -385,13 +423,37 @@ function handleCardClick() {
   border-radius: 8px;
   color: #999;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.diary-empty::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(0, 82, 217, 0.05) 0%, rgba(0, 82, 217, 0.02) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
 .diary-empty:hover {
   border-color: #0052d9;
   color: #0052d9;
-  background: rgba(0, 82, 217, 0.02);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 82, 217, 0.1);
+}
+
+.diary-empty:hover::before {
+  opacity: 1;
+}
+
+.diary-empty:hover .edit-icon {
+  opacity: 1;
+  transform: scale(1.1);
 }
 
 .edit-icon {

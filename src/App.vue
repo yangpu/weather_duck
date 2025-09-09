@@ -732,18 +732,17 @@ async function scrollToNewCard(targetDate: string) {
     let targetCard = null
     
     for (const card of weatherCards) {
-      const dateElement = card.querySelector('[data-date]')
-      if (dateElement && dateElement.getAttribute('data-date') === targetDate) {
+      if (card.getAttribute('data-date') === targetDate) {
         targetCard = card
         break
       }
     }
     
     if (targetCard) {
-      // 滚动到目标卡片，带有平滑动画
+      // 滚动到目标卡片，带有平滑动画，确保卡片完整显示
       targetCard.scrollIntoView({
         behavior: 'smooth',
-        block: 'start',
+        block: 'center',
         inline: 'nearest'
       })
       
