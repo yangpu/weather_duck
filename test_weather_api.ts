@@ -1,7 +1,8 @@
 // 测试天气API的完整性和占位数据生成
-import { WeatherApiService } from './src/services/weatherApi.js'
+import { WeatherApiService } from './src/services/weatherApi'
+import type { WeatherData } from './src/types/weather'
 
-async function testWeatherAPI() {
+async function testWeatherAPI(): Promise<void> {
   console.log('🧪 开始测试天气API...')
   
   // 测试1: 获取包含今天的日期范围
@@ -12,7 +13,7 @@ async function testWeatherAPI() {
   console.log(`📅 测试日期范围: ${startDate} 到 ${endDate}`)
   
   try {
-    const weatherData = await WeatherApiService.getEnhancedWeatherData(
+    const weatherData: WeatherData[] = await WeatherApiService.getEnhancedWeatherData(
       22.5429, // 深圳坐标
       114.0596,
       startDate,

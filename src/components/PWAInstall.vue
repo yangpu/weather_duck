@@ -21,7 +21,7 @@
 </template>
 
 <script>
-import { installPWA } from '../utils/pwa.js'
+import { installPWA } from '../utils/pwa'
 
 export default {
   name: 'PWAInstall',

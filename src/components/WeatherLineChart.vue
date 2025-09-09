@@ -7,7 +7,7 @@ import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
 import * as echarts from 'echarts'
 import type { ECharts as TECharts, EChartsOption, LineSeriesOption, BarSeriesOption } from 'echarts'
 import type { WeatherData } from '../types/weather'
-import { unifiedCacheService } from '../services/unifiedCacheService.js'
+import { unifiedCacheService } from '../services/unifiedCacheService'
 import { truncateText } from '../utils/textUtils'
 
 interface Props {

@@ -1,12 +1,17 @@
 // 缓存功能测试工具
-import { cacheService } from '../services/cacheService.js'
-import { weatherService } from '../services/weatherService.js'
-import { diaryService } from '../services/diaryService.js'
-import { globalCacheManager } from '../services/globalCacheManager.js'
+import { cacheService } from '../services/cacheService'
+import { weatherService } from '../services/weatherService'
+import { diaryService } from '../services/diaryService'
+
+interface TestResult {
+  success: boolean
+  message: string
+  duration?: number
+}
 
 export class CacheTestUtils {
   // 测试基础缓存功能
-  static testBasicCache() {
+  static testBasicCache(): void {
     console.log('=== 测试基础缓存功能 ===')
     
     // 测试设置和获取
@@ -30,7 +35,7 @@ export class CacheTestUtils {
   }
   
   // 测试天气服务缓存
-  static async testWeatherCache(latitude = 22.5429, longitude = 114.0596) {
+  static async testWeatherCache(latitude: number = 22.5429, longitude: number = 114.0596): Promise<void> {
     console.log('=== 测试天气服务缓存 ===')
     
     try {
@@ -60,7 +65,7 @@ export class CacheTestUtils {
   }
   
   // 测试日记服务缓存
-  static async testDiaryCache() {
+  static async testDiaryCache(): Promise<void> {
     console.log('=== 测试日记服务缓存 ===')
     
     try {
@@ -85,35 +90,32 @@ export class CacheTestUtils {
     console.log('日记服务缓存测试完成\n')
   }
   
-  // 测试全局缓存管理器
-  static testGlobalCacheManager() {
-    console.log('=== 测试全局缓存管理器 ===')
+  // 测试缓存统计
+  static testCacheStats(): void {
+    console.log('=== 测试缓存统计 ===')
     
     // 获取缓存统计
-    const stats = globalCacheManager.getCacheStats()
-    console.log('缓存统计:', stats)
+    const keys = cacheService.keys()
+    console.log('缓存键数量:', keys.length)
+    console.log('缓存键列表:', keys)
     
-    // 测试智能清理
-    globalCacheManager.smartCleanup()
-    console.log('智能清理完成')
-    
-    console.log('全局缓存管理器测试完成\n')
+    console.log('缓存统计测试完成\n')
   }
   
   // 运行所有测试
-  static async runAllTests(latitude = 22.5429, longitude = 114.0596) {
+  static async runAllTests(latitude: number = 22.5429, longitude: number = 114.0596): Promise<void> {
     console.log('🚀 开始缓存系统测试...\n')
     
     this.testBasicCache()
     await this.testWeatherCache(latitude, longitude)
     await this.testDiaryCache()
-    this.testGlobalCacheManager()
+    this.testCacheStats()
     
     console.log('✅ 所有缓存测试完成!')
   }
   
   // 性能对比测试
-  static async performanceTest(latitude = 22.5429, longitude = 114.0596) {
+  static async performanceTest(latitude: number = 22.5429, longitude: number = 114.0596): Promise<void> {
     console.log('=== 性能对比测试 ===')
     
     try {
@@ -121,7 +123,7 @@ export class CacheTestUtils {
       cacheService.clear()
       
       // 测试无缓存情况
-      const times = []
+      const times: number[] = []
       for (let i = 0; i < 3; i++) {
         const start = performance.now()
         await weatherService.getCurrentWeather(latitude, longitude, true) // 强制刷新
@@ -134,7 +136,7 @@ export class CacheTestUtils {
       console.log(`无缓存平均响应时间: ${avgTimeNoCache.toFixed(2)}ms`)
       
       // 测试有缓存情况
-      const cachedTimes = []
+      const cachedTimes: number[] = []
       for (let i = 0; i < 5; i++) {
         const start = performance.now()
         await weatherService.getCurrentWeather(latitude, longitude) // 使用缓存
@@ -154,12 +156,71 @@ export class CacheTestUtils {
     
     console.log('性能对比测试完成\n')
   }
+
+  // 批量测试缓存功能
+  static async batchTest(): Promise<TestResult[]> {
+    const results: TestResult[] = []
+    
+    try {
+      // 测试1: 基础缓存设置和获取
+      const testData = { test: 'data', timestamp: Date.now() }
+      cacheService.set('batch_test_1', testData, 5000)
+      const retrieved = cacheService.get('batch_test_1')
+      results.push({
+        success: JSON.stringify(retrieved) === JSON.stringify(testData),
+        message: '基础缓存设置和获取'
+      })
+
+      // 测试2: 缓存过期
+      cacheService.set('batch_test_2', testData, 1)
+      await new Promise(resolve => setTimeout(resolve, 10))
+      const expired = cacheService.get('batch_test_2')
+      results.push({
+        success: expired === null,
+        message: '缓存过期测试'
+      })
+
+      // 测试3: 缓存键生成一致性
+      const key1 = cacheService.generateKey('test', { a: 1, b: 2 })
+      const key2 = cacheService.generateKey('test', { b: 2, a: 1 })
+      results.push({
+        success: key1 === key2,
+        message: '缓存键生成一致性'
+      })
+
+      // 测试4: 缓存删除
+      cacheService.set('batch_test_4', testData)
+      cacheService.delete('batch_test_4')
+      const deleted = cacheService.get('batch_test_4')
+      results.push({
+        success: deleted === null,
+        message: '缓存删除功能'
+      })
+
+    } catch (error) {
+      results.push({
+        success: false,
+        message: `批量测试失败: ${error}`
+      })
+    }
+
+    return results
+  }
 }
 
 // 在浏览器控制台中可用的全局测试函数
+declare global {
+  interface Window {
+    testCache?: () => Promise<void>
+    testCachePerformance?: () => Promise<void>
+    cacheStats?: () => string[]
+    clearCache?: () => void
+  }
+}
+
 if (typeof window !== 'undefined') {
   window.testCache = CacheTestUtils.runAllTests.bind(CacheTestUtils)
   window.testCachePerformance = CacheTestUtils.performanceTest.bind(CacheTestUtils)
-  window.cacheStats = () => globalCacheManager.getCacheStats()
-  window.clearCache = () => globalCacheManager.clearAllCache()
+  window.cacheStats = () => cacheService.keys()
+  window.clearCache = () => cacheService.clear()
 }

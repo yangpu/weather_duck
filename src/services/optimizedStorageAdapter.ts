@@ -1,5 +1,5 @@
 import { isSupabaseEnabled } from '../config/supabase'
-import { diaryService } from './diaryService.js'
+import { diaryService } from './diaryService'
 import { WeatherDiary } from '../config/supabase'
 
 /**

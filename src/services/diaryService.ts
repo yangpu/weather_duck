@@ -1,24 +1,30 @@
 // 优化的日记服务
 import { supabase } from '../config/supabase'
-import { cacheService } from './cacheService.js'
+import { cacheService } from './cacheService'
+import type { DiaryData, DiaryServiceInterface } from '../types/diary'
 
-class DiaryService {
+class DiaryService implements DiaryServiceInterface {
+  private defaultTTL: number
+
   constructor() {
     this.defaultTTL = 300000 // 5分钟缓存
   }
 
-  async getDiaries(limit = 50, forceRefresh = false) {
+  async getDiaries(limit: number = 50, forceRefresh: boolean = false): Promise<DiaryData[]> {
     const key = cacheService.generateKey('diaries', { limit })
     
     if (!forceRefresh && cacheService.has(key)) {
-
-      return cacheService.get(key)
+      return cacheService.get<DiaryData[]>(key) || []
     }
 
     try {
+      if (!supabase) {
+        throw new Error('Supabase not configured')
+      }
+
       const { data, error } = await supabase
         .from('weather_diaries')
-        .select('id,date,content,mood,city,weather_data,images,video,created_at,updated_at')
+        .select('id,date,content,mood,city,weather_data,images,videos,created_at,updated_at')
         .order('date', { ascending: false })
         .limit(limit)
 
@@ -36,7 +42,7 @@ class DiaryService {
       return diaries
     } catch (error) {
       console.error('获取日记列表失败:', error)
-      const cachedData = cacheService.get(key)
+      const cachedData = cacheService.get<DiaryData[]>(key)
       if (cachedData) {
         return cachedData
       }
@@ -44,14 +50,18 @@ class DiaryService {
     }
   }
 
-  async getDiariesByDateRange(startDate, endDate, forceRefresh = false) {
+  async getDiariesByDateRange(startDate: string, endDate: string, forceRefresh: boolean = false): Promise<DiaryData[]> {
     const key = cacheService.generateKey('diaries_range', { startDate, endDate })
     
     if (!forceRefresh && cacheService.has(key)) {
-      return cacheService.get(key)
+      return cacheService.get<DiaryData[]>(key) || []
     }
 
     try {
+      if (!supabase) {
+        throw new Error('Supabase not configured')
+      }
+
       const { data, error } = await supabase
         .from('weather_diaries')
         .select('*')
@@ -73,7 +83,7 @@ class DiaryService {
       return diaries
     } catch (error) {
       console.error('获取日期范围日记失败:', error)
-      const cachedData = cacheService.get(key)
+      const cachedData = cacheService.get<DiaryData[]>(key)
       if (cachedData) {
         return cachedData
       }
@@ -81,17 +91,21 @@ class DiaryService {
     }
   }
 
-  async getDiaryByDate(date, forceRefresh = false) {
+  async getDiaryByDate(date: string, forceRefresh: boolean = false): Promise<DiaryData | null> {
     const key = cacheService.generateKey('diary_by_date', { date })
     
     if (!forceRefresh && cacheService.has(key)) {
-      return cacheService.get(key)
+      return cacheService.get<DiaryData>(key)
     }
 
     try {
+      if (!supabase) {
+        throw new Error('Supabase not configured')
+      }
+
       const { data, error } = await supabase
         .from('weather_diaries')
-        .select('id,date,content,mood,city,weather_data,images,video,created_at,updated_at')
+        .select('id,date,content,mood,city,weather_data,images,videos,created_at,updated_at')
         .eq('date', date)
         .maybeSingle()
 
@@ -104,7 +118,7 @@ class DiaryService {
       return diary
     } catch (error) {
       console.error(`获取日记失败 (${date}):`, error)
-      const cachedData = cacheService.get(key)
+      const cachedData = cacheService.get<DiaryData>(key)
       if (cachedData) {
         return cachedData
       }
@@ -112,18 +126,22 @@ class DiaryService {
     }
   }
 
-  async createDiary(diaryData) {
+  async createDiary(diaryData: Omit<DiaryData, 'id' | 'created_at' | 'updated_at'>): Promise<DiaryData> {
     try {
+      if (!supabase) {
+        throw new Error('Supabase not configured')
+      }
+
       // 先检查是否已存在该日期的日记
       const existingDiary = await this.getDiaryByDate(diaryData.date, true)
       
-      let data
+      let data: DiaryData
       if (existingDiary) {
         // 如果存在，则更新
         const { data: updateData, error } = await supabase
           .from('weather_diaries')
           .update(diaryData)
-          .eq('id', existingDiary.id)
+          .eq('id', existingDiary.id!)
           .select()
           .single()
         
@@ -150,8 +168,12 @@ class DiaryService {
     }
   }
 
-  async updateDiary(id, diaryData) {
+  async updateDiary(id: string, diaryData: Partial<DiaryData>): Promise<DiaryData> {
     try {
+      if (!supabase) {
+        throw new Error('Supabase not configured')
+      }
+
       const { data, error } = await supabase
         .from('weather_diaries')
         .update(diaryData)
@@ -170,8 +192,12 @@ class DiaryService {
     }
   }
 
-  async deleteDiary(id) {
+  async deleteDiary(id: string): Promise<boolean> {
     try {
+      if (!supabase) {
+        throw new Error('Supabase not configured')
+      }
+
       const { error } = await supabase
         .from('weather_diaries')
         .delete()
@@ -188,7 +214,7 @@ class DiaryService {
     }
   }
 
-  updateCacheAfterModification(diary) {
+  private updateCacheAfterModification(diary: DiaryData): void {
     // 更新单个日记缓存
     const singleKey = cacheService.generateKey('diary_by_date', { date: diary.date })
     cacheService.set(singleKey, diary, this.defaultTTL)
@@ -198,18 +224,17 @@ class DiaryService {
     cacheService.invalidateByType('diaries_range')
   }
 
-  clearDiaryCache() {
+  clearDiaryCache(): void {
     cacheService.invalidateByType('diary_by_date')
     cacheService.invalidateByType('diaries')
     cacheService.invalidateByType('diaries_range')
-
   }
 
-  async refreshDiaryByDate(date) {
+  async refreshDiaryByDate(date: string): Promise<DiaryData | null> {
     return this.getDiaryByDate(date, true)
   }
 
-  async preloadAdjacentDiaries(currentDate) {
+  async preloadAdjacentDiaries(currentDate: string): Promise<void> {
     const current = new Date(currentDate)
     const prevDate = new Date(current.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
     const nextDate = new Date(current.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]

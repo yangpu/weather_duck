@@ -216,7 +216,7 @@ import { ref, watch, computed } from 'vue'
 import { WeatherData } from '../types/weather'
 import { DateUtils } from '../utils/dateUtils'
 import { SupabaseStorageService } from '../services/supabaseStorage'
-import { diaryService } from '../services/diaryService.js'
+import { diaryService } from '../services/diaryService'
 
 import WeatherSummary from './WeatherSummary.vue'
 // import type { WeatherDiary } from '../config/supabase'

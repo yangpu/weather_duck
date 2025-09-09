@@ -1,25 +1,32 @@
 // 简化的缓存服务
-class CacheService {
+import type { CacheItem, CacheServiceInterface } from '../types/cache'
+
+class CacheService implements CacheServiceInterface {
+  private cache: Map<string, CacheItem>
+  private ttlMap: Map<string, number>
+  private maxSize: number
+  private cleanupInterval: NodeJS.Timeout
+
   constructor() {
     this.cache = new Map()
     this.ttlMap = new Map()
     this.maxSize = 1000
     
     // 定期清理过期缓存
-    setInterval(() => this.cleanup(), 60000) // 每分钟清理一次
+    this.cleanupInterval = setInterval(() => this.cleanup(), 60000) // 每分钟清理一次
   }
 
-  generateKey(type, params) {
+  generateKey(type: string, params: Record<string, any>): string {
     const sortedParams = Object.keys(params)
       .sort()
       .reduce((result, key) => {
         result[key] = params[key]
         return result
-      }, {})
+      }, {} as Record<string, any>)
     return `${type}:${JSON.stringify(sortedParams)}`
   }
 
-  set(key, data, ttl = 300000) { // 默认5分钟TTL
+  set<T>(key: string, data: T, ttl: number = 300000): void { // 默认5分钟TTL
     if (this.cache.size >= this.maxSize) {
       this.evictOldest()
     }
@@ -34,7 +41,7 @@ class CacheService {
     }
   }
 
-  get(key) {
+  get<T>(key: string): T | null {
     const item = this.cache.get(key)
     if (!item) return null
 
@@ -44,20 +51,20 @@ class CacheService {
       return null
     }
 
-    return item.data
+    return item.data as T
   }
 
-  delete(key) {
+  delete(key: string): void {
     this.cache.delete(key)
     this.ttlMap.delete(key)
   }
 
-  clear() {
+  clear(): void {
     this.cache.clear()
     this.ttlMap.clear()
   }
 
-  cleanup() {
+  cleanup(): void {
     const now = Date.now()
     for (const [key, expiry] of this.ttlMap.entries()) {
       if (now > expiry) {
@@ -66,24 +73,32 @@ class CacheService {
     }
   }
 
-  has(key) {
+  has(key: string): boolean {
     return this.cache.has(key) && this.get(key) !== null
   }
 
-  keys() {
+  keys(): string[] {
     return Array.from(this.cache.keys())
   }
 
-  invalidateByType(type) {
+  invalidateByType(type: string): void {
     const keysToDelete = this.keys().filter(key => key.startsWith(`${type}:`))
     keysToDelete.forEach(key => this.delete(key))
   }
 
-  evictOldest() {
+  private evictOldest(): void {
     const oldestKey = this.cache.keys().next().value
     if (oldestKey) {
       this.delete(oldestKey)
     }
+  }
+
+  // 清理定时器
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval)
+    }
+    this.clear()
   }
 }
 

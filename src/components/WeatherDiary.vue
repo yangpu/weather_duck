@@ -77,7 +77,7 @@ import { ref, watch, computed, onMounted } from 'vue'
 import { WeatherData } from '../types/weather'
 import { DateUtils } from '../utils/dateUtils'
 
-import { diaryService } from '../services/diaryService.js'
+import { diaryService } from '../services/diaryService'
 
 interface Props {
   visible: boolean

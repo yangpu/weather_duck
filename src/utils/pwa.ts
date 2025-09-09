@@ -1,27 +1,48 @@
 // PWA 相关工具函数
 
+interface DeviceInfo {
+  isStandalone: boolean
+  isMobile: boolean
+  isIOS: boolean
+  supportsServiceWorker: boolean
+  supportsNotifications: boolean
+  supportsPushManager: boolean
+}
+
+interface NotificationOptions {
+  body?: string
+  icon?: string
+  badge?: string
+  tag?: string
+  data?: any
+  requireInteraction?: boolean
+  silent?: boolean
+}
+
 /**
  * 注册 Service Worker
  */
-export function registerServiceWorker() {
+export function registerServiceWorker(): void {
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js')
         .then((registration) => {
-          
           // 检查更新
           registration.addEventListener('updatefound', () => {
             const newWorker = registration.installing;
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                // 新的 service worker 已安装，提示用户刷新
-                showUpdateAvailable();
-              }
-            });
+            if (newWorker) {
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // 新的 service worker 已安装，提示用户刷新
+                  showUpdateAvailable();
+                }
+              });
+            }
           });
         })
         .catch((registrationError) => {
           // 静默处理注册失败
+          console.warn('Service Worker 注册失败:', registrationError);
         });
     });
   }
@@ -30,7 +51,7 @@ export function registerServiceWorker() {
 /**
  * 显示更新可用提示
  */
-function showUpdateAvailable() {
+function showUpdateAvailable(): void {
   if (confirm('应用有新版本可用，是否立即更新？')) {
     window.location.reload();
   }
@@ -39,16 +60,16 @@ function showUpdateAvailable() {
 /**
  * 检查是否可以安装PWA
  */
-export function checkInstallPrompt() {
-  let deferredPrompt;
+export function checkInstallPrompt(): BeforeInstallPromptEvent | null {
+  let deferredPrompt: BeforeInstallPromptEvent | null = null;
   
   if (window.matchMedia('(display-mode: standalone)').matches) {
     return null;
   }
   
-  window.addEventListener('beforeinstallprompt', (e) => {
+  window.addEventListener('beforeinstallprompt', (e: Event) => {
     e.preventDefault();
-    deferredPrompt = e;
+    deferredPrompt = e as BeforeInstallPromptEvent;
     showInstallButton(deferredPrompt);
   });
   
@@ -58,7 +79,7 @@ export function checkInstallPrompt() {
 /**
  * 显示安装按钮
  */
-function showInstallButton(deferredPrompt) {
+function showInstallButton(deferredPrompt: BeforeInstallPromptEvent): void {
   const installButton = document.getElementById('install-button');
   if (installButton) {
     installButton.style.display = 'block';
@@ -71,10 +92,11 @@ function showInstallButton(deferredPrompt) {
 /**
  * 安装PWA
  */
-export function installPWA(deferredPrompt) {
+export function installPWA(deferredPrompt: BeforeInstallPromptEvent | null): void {
   if (deferredPrompt) {
     deferredPrompt.prompt();
     deferredPrompt.userChoice.then((choiceResult) => {
+      console.log('用户选择:', choiceResult.outcome);
       deferredPrompt = null;
     });
   }
@@ -83,7 +105,7 @@ export function installPWA(deferredPrompt) {
 /**
  * 请求通知权限
  */
-export function requestNotificationPermission() {
+export function requestNotificationPermission(): Promise<boolean> {
   if ('Notification' in window) {
     return Notification.requestPermission().then((permission) => {
       return permission === 'granted';
@@ -95,7 +117,7 @@ export function requestNotificationPermission() {
 /**
  * 发送本地通知
  */
-export function sendNotification(title, options = {}) {
+export function sendNotification(title: string, options: NotificationOptions = {}): Notification | undefined {
   if ('Notification' in window && Notification.permission === 'granted') {
     const notification = new Notification(title, {
       icon: '/icons/icon-192x192.png',
@@ -115,7 +137,7 @@ export function sendNotification(title, options = {}) {
 /**
  * 检查网络状态
  */
-export function checkNetworkStatus() {
+export function checkNetworkStatus(): void {
   const updateOnlineStatus = () => {
     const isOnline = navigator.onLine;
     document.body.classList.toggle('offline', !isOnline);
@@ -137,7 +159,7 @@ export function checkNetworkStatus() {
 /**
  * 获取设备信息
  */
-export function getDeviceInfo() {
+export function getDeviceInfo(): DeviceInfo {
   return {
     isStandalone: window.matchMedia('(display-mode: standalone)').matches,
     isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
@@ -146,4 +168,20 @@ export function getDeviceInfo() {
     supportsNotifications: 'Notification' in window,
     supportsPushManager: 'PushManager' in window
   };
+}
+
+// 扩展 BeforeInstallPromptEvent 接口
+declare global {
+  interface BeforeInstallPromptEvent extends Event {
+    readonly platforms: string[];
+    readonly userChoice: Promise<{
+      outcome: 'accepted' | 'dismissed';
+      platform: string;
+    }>;
+    prompt(): Promise<void>;
+  }
+
+  interface WindowEventMap {
+    beforeinstallprompt: BeforeInstallPromptEvent;
+  }
 }

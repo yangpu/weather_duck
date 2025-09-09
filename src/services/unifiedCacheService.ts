@@ -1,19 +1,59 @@
 // 统一缓存服务 - 优化天气和日记数据请求
-import { weatherService } from './weatherService.js'
-import { diaryService } from './diaryService.js'
-import { cacheService } from './cacheService.js'
+import { weatherService } from './weatherService'
+import { diaryService } from './diaryService'
+import type { WeatherData } from '../types/weather'
+import type { DiaryData } from '../types/diary'
+import type { UnifiedCacheStats, InitializeDataResult } from '../types/services'
+
+interface WeatherDataReadyEvent extends CustomEvent {
+  detail: { weatherData: WeatherData[] }
+}
+
+interface DiariesDataReadyEvent extends CustomEvent {
+  detail: { diariesData: DiaryData[] }
+}
+
+interface UnifiedDataReadyEvent extends CustomEvent {
+  detail: { weatherData: WeatherData[]; diariesData: DiaryData[] }
+}
+
+interface DiaryUpdatedEvent extends CustomEvent {
+  detail: { date: string; diary: DiaryData | null }
+}
+
+declare global {
+  interface Window {
+    __unifiedCacheService?: UnifiedCacheService
+    __diaryCache?: Map<string, DiaryData>
+    __weatherCache?: Map<string, WeatherData>
+    __weatherList?: WeatherData[]
+  }
+
+  interface WindowEventMap {
+    'weather:data:ready': WeatherDataReadyEvent
+    'diaries:data:ready': DiariesDataReadyEvent
+    'unified:data:ready': UnifiedDataReadyEvent
+    'diary:updated': DiaryUpdatedEvent
+  }
+}
 
 class UnifiedCacheService {
+  private isInitialized: boolean
+  private currentDateRange: string | null
+  private weatherCache: Map<string, WeatherData>
+  private diaryCache: Map<string, DiaryData>
+  private requestPromises: Map<string, Promise<InitializeDataResult>> // 防止重复请求
+
   constructor() {
     this.isInitialized = false
     this.currentDateRange = null
     this.weatherCache = new Map()
     this.diaryCache = new Map()
-    this.requestPromises = new Map() // 防止重复请求
+    this.requestPromises = new Map()
   }
 
   // 统一初始化天气和日记数据
-  async initializeData(startDate, endDate, latitude, longitude, forceRefresh = false) {
+  async initializeData(startDate: string, endDate: string, latitude: number, longitude: number, forceRefresh: boolean = false): Promise<InitializeDataResult> {
     const cacheKey = `${startDate}-${endDate}-${latitude}-${longitude}`
 
     // 检查是否已经初始化相同的数据范围
@@ -28,7 +68,7 @@ class UnifiedCacheService {
 
     // 防止重复请求
     if (this.requestPromises.has(cacheKey)) {
-      return await this.requestPromises.get(cacheKey)
+      return await this.requestPromises.get(cacheKey)!
     }
 
     const requestPromise = this._performInitialization(startDate, endDate, latitude, longitude, cacheKey)
@@ -42,10 +82,8 @@ class UnifiedCacheService {
     }
   }
 
-  async _performInitialization(startDate, endDate, latitude, longitude, cacheKey) {
+  private async _performInitialization(startDate: string, endDate: string, latitude: number, longitude: number, cacheKey: string): Promise<InitializeDataResult> {
     try {
-      // console.log('🚀 统一缓存服务：开始初始化数据', { startDate, endDate })
-
       // 优化1: 合并天气请求 - 使用单一的增强天气API替代多次forecast请求
       const weatherPromise = this._getOptimizedWeatherData(latitude, longitude, startDate, endDate)
 
@@ -72,11 +110,6 @@ class UnifiedCacheService {
       // 通知组件数据就绪
       this._notifyDataReady(weatherData, diariesData)
 
-      // console.log('✅ 统一缓存服务：数据初始化完成', {
-      //   weatherCount: weatherData.length,
-      //   diariesCount: diariesData.length
-      // })
-
       return { weatherData, diariesData }
 
     } catch (error) {
@@ -86,7 +119,7 @@ class UnifiedCacheService {
   }
 
   // 优化的天气数据获取 - 合并多个forecast请求
-  async _getOptimizedWeatherData(latitude, longitude, startDate, endDate) {
+  private async _getOptimizedWeatherData(latitude: number, longitude: number, startDate: string, endDate: string): Promise<WeatherData[]> {
     try {
       // 使用增强版天气API，一次性获取历史+当前+预测数据
       const weatherData = await weatherService.getWeatherForDateRange(
@@ -130,15 +163,10 @@ class UnifiedCacheService {
   }
 
   // 优化的日记数据获取 - 统一批量请求
-  async _getOptimizedDiariesData(startDate, endDate) {
+  private async _getOptimizedDiariesData(startDate: string, endDate: string): Promise<DiaryData[]> {
     try {
       // 一次性获取日期范围内的所有日记，避免多次单独请求
       const diariesData = await diaryService.getDiariesByDateRange(startDate, endDate)
-
-      // console.log('📚 统一获取日记数据:', {
-      //   dateRange: `${startDate} ~ ${endDate}`,
-      //   count: diariesData.length
-      // })
 
       return diariesData
 
@@ -150,7 +178,7 @@ class UnifiedCacheService {
   }
 
   // 更新天气缓存
-  _updateWeatherCache(weatherData) {
+  private _updateWeatherCache(weatherData: WeatherData[]): void {
     this.weatherCache.clear()
     weatherData.forEach(weather => {
       this.weatherCache.set(weather.date, weather)
@@ -158,7 +186,7 @@ class UnifiedCacheService {
   }
 
   // 更新日记缓存
-  _updateDiariesCache(diariesData) {
+  private _updateDiariesCache(diariesData: DiaryData[]): void {
     this.diaryCache.clear()
     diariesData.forEach(diary => {
       if (diary.date) {
@@ -168,7 +196,7 @@ class UnifiedCacheService {
   }
 
   // 暴露到全局供组件使用
-  _exposeToGlobal() {
+  private _exposeToGlobal(): void {
     window.__unifiedCacheService = this
     window.__diaryCache = this.diaryCache
     window.__weatherCache = this.weatherCache
@@ -176,25 +204,25 @@ class UnifiedCacheService {
   }
 
   // 通知组件数据就绪
-  _notifyDataReady(weatherData, diariesData) {
+  private _notifyDataReady(weatherData: WeatherData[], diariesData: DiaryData[]): void {
     // 通知天气数据就绪
     window.dispatchEvent(new CustomEvent('weather:data:ready', {
       detail: { weatherData }
-    }))
+    }) as WeatherDataReadyEvent)
 
     // 通知日记数据就绪
     window.dispatchEvent(new CustomEvent('diaries:data:ready', {
       detail: { diariesData }
-    }))
+    }) as DiariesDataReadyEvent)
 
     // 通知所有数据就绪
     window.dispatchEvent(new CustomEvent('unified:data:ready', {
       detail: { weatherData, diariesData }
-    }))
+    }) as UnifiedDataReadyEvent)
   }
 
   // 获取天气数据
-  getWeatherData(date = null) {
+  getWeatherData(date?: string): WeatherData | WeatherData[] | null {
     if (date) {
       return this.weatherCache.get(date) || null
     }
@@ -202,7 +230,7 @@ class UnifiedCacheService {
   }
 
   // 获取日记数据
-  getDiaryData(date = null) {
+  getDiaryData(date?: string): DiaryData | DiaryData[] | null {
     if (date) {
       return this.diaryCache.get(date) || null
     }
@@ -210,7 +238,7 @@ class UnifiedCacheService {
   }
 
   // 设置日记数据
-  setDiaryData(date, diary) {
+  setDiaryData(date: string, diary: DiaryData | null): void {
     if (diary) {
       this.diaryCache.set(date, diary)
     } else {
@@ -219,12 +247,10 @@ class UnifiedCacheService {
 
     // 更新全局缓存
     window.__diaryCache = this.diaryCache
-
-    // console.log(`📝 统一缓存服务：更新日记数据 ${date}`)
   }
 
   // 刷新特定日期的日记数据
-  async refreshDiaryData(date) {
+  async refreshDiaryData(date: string): Promise<DiaryData | null> {
     try {
       const diary = await diaryService.getDiaryByDate(date, true) // 强制刷新
 
@@ -240,7 +266,7 @@ class UnifiedCacheService {
       // 通知组件更新
       window.dispatchEvent(new CustomEvent('diary:updated', {
         detail: { date, diary }
-      }))
+      }) as DiaryUpdatedEvent)
 
       return diary
     } catch (error) {
@@ -250,7 +276,7 @@ class UnifiedCacheService {
   }
 
   // 预加载相邻日期的数据
-  async preloadAdjacentData(currentDate) {
+  async preloadAdjacentData(currentDate: string): Promise<void> {
     const current = new Date(currentDate)
     const prevDate = new Date(current.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
     const nextDate = new Date(current.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]
@@ -263,7 +289,7 @@ class UnifiedCacheService {
   }
 
   // 清理缓存
-  clearCache() {
+  clearCache(): void {
     this.weatherCache.clear()
     this.diaryCache.clear()
     this.requestPromises.clear()
@@ -275,12 +301,10 @@ class UnifiedCacheService {
     delete window.__diaryCache
     delete window.__weatherCache
     delete window.__weatherList
-
-    // console.log('🧹 统一缓存服务：缓存已清理')
   }
 
   // 获取缓存统计信息
-  getCacheStats() {
+  getCacheStats(): UnifiedCacheStats {
     return {
       weatherCacheSize: this.weatherCache.size,
       diaryCacheSize: this.diaryCache.size,

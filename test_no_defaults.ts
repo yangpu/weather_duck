@@ -1,7 +1,8 @@
 // 测试修改后的天气API - 不使用默认值
-import { WeatherApiService } from './src/services/weatherApi.js'
+import { WeatherApiService } from './src/services/weatherApi'
+import type { WeatherData } from './src/types/weather'
 
-async function testNoDefaultsAPI() {
+async function testNoDefaultsAPI(): Promise<void> {
   console.log('🧪 测试无默认值的天气API...')
   
   // 测试占位数据生成
@@ -9,7 +10,7 @@ async function testNoDefaultsAPI() {
   const today = new Date().toISOString().slice(0, 10)
   
   // 模拟生成占位数据
-  const placeholderData = {
+  const placeholderData: WeatherData = {
     date: testDate,
     temperature: { min: 0, max: 0, current: 0 },
     humidity: 0,
