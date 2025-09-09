@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>加载卡片测试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .card {
+            background: white;
+            border-radius: 9px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border: 1px solid #e7e7e7;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .card-info h3 {
+            margin: 0 0 4px 0;
+            font-size: 15px;
+            font-weight: 500;
+        }
+        .card-info p {
+            margin: 0;
+            font-size: 13px;
+            color: #666;
+        }
+        .btn {
+            width: 100%;
+            padding: 8px 16px;
+            border: 1px solid #0052d9;
+            background: white;
+            color: #0052d9;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .btn:hover {
+            background: #f0f8ff;
+        }
+        .btn.success {
+            border-color: #00a870;
+            color: #00a870;
+        }
+        .btn.success:hover {
+            background: #f0fff4;
+        }
+        .btn.warning {
+            border-color: #ed7b2f;
+            color: #ed7b2f;
+        }
+        .btn.warning:hover {
+            background: #fff8f0;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 6px;
+            background: #e8f4fd;
+            border: 1px solid #b3d8f2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>加载卡片功能测试</h1>
+        
+        <div class="status">
+            <h3>✅ 优化完成的功能</h3>
+            <ul>
+                <li>✅ 统一采用手机端样式布局</li>
+                <li>✅ LoadNextCard使用左箭头图标</li>
+                <li>✅ LoadPreviousCard使用右箭头图标</li>
+                <li>✅ 智能隐藏：已加载未来3天数据后自动隐藏LoadNextCard</li>
+                <li>✅ 数据倒序排列：日期最大的排在最前面</li>
+                <li>✅ 自动滚动：加载完成后滚动到新加载的第一个卡片</li>
+            </ul>
+        </div>
+
+        <!-- LoadNextCard 示例 -->
+        <div class="card">
+            <div class="card-info">
+                <h3>加载后7天数据</h3>
+                <p>2024-09-10 至 2024-09-16</p>
+            </div>
+            <button class="btn success">
+                <span>←</span>
+                加载
+            </button>
+        </div>
+
+        <!-- 天气卡片列表 -->
+        <div class="card">
+            <div class="card-info">
+                <h3>天气数据</h3>
+                <p>2024-09-09 - 晴天 25°C</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-info">
+                <h3>天气数据</h3>
+                <p>2024-09-08 - 多云 23°C</p>
+            </div>
+        </div>
+
+        <!-- LoadPreviousCard 示例 -->
+        <div class="card">
+            <div class="card-info">
+                <h3>加载前7天数据</h3>
+                <p>2024-09-01 至 2024-09-07</p>
+            </div>
+            <button class="btn">
+                <span>→</span>
+                加载
+            </button>
+        </div>
+
+        <!-- 预测数据示例 -->
+        <div class="card">
+            <div class="card-info">
+                <h3>预测未来3天数据</h3>
+                <p>预测数据 2024-09-10 至 2024-09-12</p>
+            </div>
+            <button class="btn warning">
+                <span>←</span>
+                加载
+            </button>
+        </div>
+
+        <div class="status">
+            <h3>🎯 主要改进</h3>
+            <p><strong>样式优化：</strong>所有卡片现在都采用统一的手机端样式，在PC和移动端都有良好的显示效果。</p>
+            <p><strong>图标方向：</strong>LoadNextCard使用左箭头(←)，LoadPreviousCard使用右箭头(→)，更符合时间轴的直觉。</p>
+            <p><strong>智能隐藏：</strong>当已经加载了未来3天的预测数据后，LoadNextCard会自动隐藏，避免重复加载。</p>
+            <p><strong>数据排序：</strong>所有天气数据按日期倒序排列，最新的日期显示在最前面。</p>
+            <p><strong>自动滚动：</strong>加载完成后会自动滚动到新加载数据的第一个卡片位置。</p>
+        </div>
+    </div>
+</body>
+</html>

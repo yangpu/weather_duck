@@ -57,6 +57,8 @@
     <div class="app-content">
       <t-alert v-if="errorMessage" theme="error" :message="errorMessage" class="no-print" />
       <t-loading :loading="loading" text="数据加载中...">
+
+        
         <div class="cards-grid">
           <WeatherCard 
             v-for="item in weatherList" 
@@ -64,10 +66,18 @@
             :weather="item" 
             @click="handleWeatherCardClick"
           />
-          <LoadMoreCard 
-            :loading="loadingMore"
+          <!-- LoadNextCard 放在列表前面 -->
+          <LoadNextCard
+            :loading="loadingNext"
+            :current-end-date="endDate"
+            @load-next="handleLoadNext"
+          />
+          
+          <!-- LoadPreviousCard 放在列表后面 -->
+          <LoadPreviousCard
+            :loading="loadingPrevious"
             :current-start-date="startDate"
-            @load-more="handleLoadMore"
+            @load-previous="handleLoadPrevious"
           />
         </div>
       </t-loading>
@@ -133,7 +143,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 
 // 扩展Window接口以支持markLoaded函数
 declare global {
@@ -146,11 +156,12 @@ import WeatherCard from './components/WeatherCard.vue'
 import WeatherLineChart from './components/WeatherLineChart.vue'
 import WeatherDiaryEdit from './components/WeatherDiaryEdit.vue'
 import WeatherDiaryView from './components/WeatherDiaryView.vue'
+import LoadNextCard from './components/LoadNextCard.vue'
+import LoadPreviousCard from './components/LoadPreviousCard.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import OfflineIndicator from './components/OfflineIndicator.vue'
 import PWAInstall from './components/PWAInstall.vue'
 import AppHeader from './components/AppHeader.vue'
-import LoadMoreCard from './components/LoadMoreCard.vue'
 import { WeatherApiService } from './services/weatherApi'
 
 import { weatherService } from './services/weatherService.js'
@@ -162,7 +173,9 @@ import { initializeSupabase } from './utils/initSupabase'
 
 const loading = ref(false)
 const locating = ref(false)
-const loadingMore = ref(false)
+const loadingNext = ref(false)
+const loadingPrevious = ref(false)
+const hasLoadedFuture3Days = ref(false)
 const errorMessage = ref('')
 
 const latitude = ref(22.5429)
@@ -439,9 +452,9 @@ function showAbout() {
 
 // 处理加载更多天气数据
 async function handleLoadMore() {
-  if (loadingMore.value) return
+  if (loading.value) return
   
-  loadingMore.value = true
+  loading.value = true
   try {
     // 计算新的日期范围（从当前开始日期往前推7天）
     const currentStartDate = new Date(startDate.value)
@@ -474,7 +487,202 @@ async function handleLoadMore() {
   } catch (error) {
     errorMessage.value = '加载更多数据失败，请稍后重试'
   } finally {
-    loadingMore.value = false
+    loading.value = false
+  }
+}
+
+// 处理加载后7天数据
+async function handleLoadNext(startDateStr, endDateStr, isForecast) {
+  if (loadingNext.value) return
+
+  loadingNext.value = true
+  try {
+    console.log(`🔄 开始加载后7天数据: ${startDateStr} 至 ${endDateStr} (预测: ${isForecast})`)
+    
+    // 获取新的天气数据
+    const newWeatherData = await weatherService.getWeatherForDateRange(
+      latitude.value,
+      longitude.value,
+      startDateStr,
+      endDateStr
+    )
+    
+    if (newWeatherData && newWeatherData.length > 0) {
+      // 将新数据添加到现有数据中，并按日期倒序排列
+      const allData = [...weatherList.value, ...newWeatherData]
+      weatherList.value = allData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      
+      // 更新结束日期
+      endDate.value = endDateStr
+      dateRangeValue.value = [startDate.value, endDate.value]
+      
+      // 检查是否已加载未来3天数据
+      const today = new Date()
+      const maxForecastDate = new Date(today)
+      maxForecastDate.setDate(today.getDate() + 3)
+      
+      if (new Date(endDateStr) >= maxForecastDate && isForecast) {
+        hasLoadedFuture3Days.value = true
+      }
+      
+      const dataType = isForecast ? '预测' : '历史'
+      console.log(`✅ 成功加载后7天${dataType}数据: ${newWeatherData.length} 条`)
+      
+      // 加载对应时间段的日记数据
+      try {
+        console.log(`🔄 开始加载日记数据: ${startDateStr} 至 ${endDateStr}`)
+        const newDiaries = await diaryService.getDiariesByDateRange(startDateStr, endDateStr)
+        
+        // 将新加载的日记数据更新到统一缓存服务中
+        if (newDiaries && newDiaries.length > 0) {
+          console.log(`📝 准备缓存日记数据:`, newDiaries.map(d => ({ date: d.date, hasContent: !!d.content, hasMood: !!d.mood })))
+          newDiaries.forEach(diary => {
+            if (diary.date) {
+              unifiedCacheService.setDiaryData(diary.date, diary)
+              console.log(`📝 已缓存日记: ${diary.date}`)
+            }
+          })
+          console.log(`✅ 成功加载并缓存日记数据: ${newDiaries.length} 条`)
+          
+          // 验证缓存是否成功
+          const cachedDiaries = unifiedCacheService.getDiaryData()
+          console.log(`📝 缓存验证 - 总日记数:`, cachedDiaries.length, '日期列表:', cachedDiaries.map(d => d.date))
+          
+          // 触发事件通知WeatherCard组件更新
+          window.dispatchEvent(new CustomEvent('diaries:data:ready', {
+            detail: { startDate: startDateStr, endDate: endDateStr, diaries: newDiaries }
+          }))
+          console.log(`📡 已触发 diaries:data:ready 事件`)
+        } else {
+          console.log(`✅ 日记数据加载完成，但该时间段无日记数据`)
+        }
+      } catch (diaryError) {
+        console.warn('⚠️ 加载日记数据失败:', diaryError)
+        // 日记加载失败不影响天气数据显示
+      }
+      
+      // 等待DOM更新完成后再滚动
+      await nextTick()
+      await new Promise(resolve => setTimeout(resolve, 100)) // 额外等待确保渲染完成
+      
+      // 自动滚动到新加载的第一个卡片（日期最大的）
+      await scrollToNewCard(endDateStr) // 使用结束日期，因为是最新的数据
+    }
+  } catch (error) {
+    console.error('❌ 加载后7天数据失败:', error)
+    errorMessage.value = '加载后7天数据失败，请重试'
+  } finally {
+    loadingNext.value = false
+  }
+}
+
+// 处理加载前7天数据
+async function handleLoadPrevious(startDateStr: string, endDateStr: string) {
+  if (loadingPrevious.value) return
+
+  loadingPrevious.value = true
+  try {
+    console.log(`🔄 开始加载前7天数据: ${startDateStr} 至 ${endDateStr}`)
+    
+    // 获取新的天气数据
+    const newWeatherData = await weatherService.getWeatherForDateRange(
+      latitude.value,
+      longitude.value,
+      startDateStr,
+      endDateStr
+    )
+    
+    if (newWeatherData && newWeatherData.length > 0) {
+      // 将新数据添加到现有数据中，并按日期倒序排列
+      const allData = [...weatherList.value, ...newWeatherData]
+      weatherList.value = allData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      
+      // 更新开始日期
+      startDate.value = startDateStr
+      dateRangeValue.value = [startDate.value, endDate.value]
+      
+      console.log(`✅ 成功加载前7天历史数据: ${newWeatherData.length} 条`)
+      
+      // 加载对应时间段的日记数据
+      try {
+        console.log(`🔄 开始加载日记数据: ${startDateStr} 至 ${endDateStr}`)
+        const newDiaries = await diaryService.getDiariesByDateRange(startDateStr, endDateStr)
+        
+        // 将新加载的日记数据更新到统一缓存服务中
+        if (newDiaries && newDiaries.length > 0) {
+          console.log(`📝 准备缓存日记数据:`, newDiaries.map(d => ({ date: d.date, hasContent: !!d.content, hasMood: !!d.mood })))
+          newDiaries.forEach(diary => {
+            if (diary.date) {
+              unifiedCacheService.setDiaryData(diary.date, diary)
+              console.log(`📝 已缓存日记: ${diary.date}`)
+            }
+          })
+          console.log(`✅ 成功加载并缓存日记数据: ${newDiaries.length} 条`)
+          
+          // 验证缓存是否成功
+          const cachedDiaries = unifiedCacheService.getDiaryData()
+          console.log(`📝 缓存验证 - 总日记数:`, cachedDiaries.length, '日期列表:', cachedDiaries.map(d => d.date))
+          
+          // 触发事件通知WeatherCard组件更新
+          window.dispatchEvent(new CustomEvent('diaries:data:ready', {
+            detail: { startDate: startDateStr, endDate: endDateStr, diaries: newDiaries }
+          }))
+          console.log(`📡 已触发 diaries:data:ready 事件`)
+        } else {
+          console.log(`✅ 日记数据加载完成，但该时间段无日记数据`)
+        }
+      } catch (diaryError) {
+        console.warn('⚠️ 加载日记数据失败:', diaryError)
+        // 日记加载失败不影响天气数据显示
+      }
+      
+      // 等待DOM更新完成后再滚动
+      await nextTick()
+      await new Promise(resolve => setTimeout(resolve, 100)) // 额外等待确保渲染完成
+      
+      // 自动滚动到新加载的第一个卡片（日期最大的新数据）
+      await scrollToNewCard(endDateStr)
+    }
+  } catch (error) {
+    console.error('❌ 加载前7天数据失败:', error)
+    errorMessage.value = '加载前7天数据失败，请重试'
+  } finally {
+    loadingPrevious.value = false
+  }
+}
+
+// 自动滚动到新加载的卡片
+async function scrollToNewCard(targetDate: string) {
+  // 等待DOM更新
+  await nextTick()
+  
+  try {
+    // 查找对应日期的天气卡片
+    const weatherCards = document.querySelectorAll('.weather-card')
+    let targetCard = null
+    
+    for (const card of weatherCards) {
+      const dateElement = card.querySelector('[data-date]')
+      if (dateElement && dateElement.getAttribute('data-date') === targetDate) {
+        targetCard = card
+        break
+      }
+    }
+    
+    if (targetCard) {
+      // 滚动到目标卡片，带有平滑动画
+      targetCard.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+        inline: 'nearest'
+      })
+      
+      console.log(`📍 自动滚动到日期: ${targetDate}`)
+    } else {
+      console.warn(`⚠️ 未找到日期为 ${targetDate} 的卡片`)
+    }
+  } catch (error) {
+    console.error('❌ 自动滚动失败:', error)
   }
 }
 

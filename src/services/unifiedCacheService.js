@@ -209,6 +209,20 @@ class UnifiedCacheService {
     return Array.from(this.diaryCache.values())
   }
 
+  // 设置日记数据
+  setDiaryData(date, diary) {
+    if (diary) {
+      this.diaryCache.set(date, diary)
+    } else {
+      this.diaryCache.delete(date)
+    }
+
+    // 更新全局缓存
+    window.__diaryCache = this.diaryCache
+
+    console.log(`📝 统一缓存服务：更新日记数据 ${date}`)
+  }
+
   // 刷新特定日期的日记数据
   async refreshDiaryData(date) {
     try {
