@@ -66,17 +66,14 @@
             :weather="item" 
             @click="handleWeatherCardClick"
           />
-          <!-- LoadNextCard 放在列表前面 -->
-          <LoadNextCard
-            :loading="loadingNext"
-            :current-end-date="endDate"
-            @load-next="handleLoadNext"
-          />
-          
-          <!-- LoadPreviousCard 放在列表后面 -->
-          <LoadPreviousCard
-            :loading="loadingPrevious"
+          <!-- 合并的加载更多卡片 -->
+          <LoadMoreCard
+            :loading-next="loadingNext"
+            :loading-previous="loadingPrevious"
             :current-start-date="startDate"
+            :current-end-date="endDate"
+            :has-loaded-future3-days="hasLoadedFuture3Days"
+            @load-next="handleLoadNext"
             @load-previous="handleLoadPrevious"
           />
         </div>
@@ -156,8 +153,7 @@ import WeatherCard from './components/WeatherCard.vue'
 import WeatherLineChart from './components/WeatherLineChart.vue'
 import WeatherDiaryEdit from './components/WeatherDiaryEdit.vue'
 import WeatherDiaryView from './components/WeatherDiaryView.vue'
-import LoadNextCard from './components/LoadNextCard.vue'
-import LoadPreviousCard from './components/LoadPreviousCard.vue'
+import LoadMoreCard from './components/LoadMoreCard.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import OfflineIndicator from './components/OfflineIndicator.vue'
 import PWAInstall from './components/PWAInstall.vue'
