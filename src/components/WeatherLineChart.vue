@@ -53,10 +53,10 @@ function loadDiaryMoods() {
     diaryMoods.value = moodMap
     diaryData.value = dataMap
     
-    console.log('📊 WeatherLineChart: 从统一缓存加载日记数据', {
-      diariesCount: diaries.length,
-      moodsCount: Object.keys(moodMap).length
-    })
+    // console.log('📊 WeatherLineChart: 从统一缓存加载日记数据', {
+    //   diariesCount: diaries.length,
+    //   moodsCount: Object.keys(moodMap).length
+    // })
 
   } catch (error) {
     console.error('加载日记数据失败:', error)

@@ -44,7 +44,7 @@ class UnifiedCacheService {
 
   async _performInitialization(startDate, endDate, latitude, longitude, cacheKey) {
     try {
-      console.log('🚀 统一缓存服务：开始初始化数据', { startDate, endDate })
+      // console.log('🚀 统一缓存服务：开始初始化数据', { startDate, endDate })
 
       // 优化1: 合并天气请求 - 使用单一的增强天气API替代多次forecast请求
       const weatherPromise = this._getOptimizedWeatherData(latitude, longitude, startDate, endDate)
@@ -72,10 +72,10 @@ class UnifiedCacheService {
       // 通知组件数据就绪
       this._notifyDataReady(weatherData, diariesData)
 
-      console.log('✅ 统一缓存服务：数据初始化完成', {
-        weatherCount: weatherData.length,
-        diariesCount: diariesData.length
-      })
+      // console.log('✅ 统一缓存服务：数据初始化完成', {
+      //   weatherCount: weatherData.length,
+      //   diariesCount: diariesData.length
+      // })
 
       return { weatherData, diariesData }
 
@@ -135,10 +135,10 @@ class UnifiedCacheService {
       // 一次性获取日期范围内的所有日记，避免多次单独请求
       const diariesData = await diaryService.getDiariesByDateRange(startDate, endDate)
 
-      console.log('📚 统一获取日记数据:', {
-        dateRange: `${startDate} ~ ${endDate}`,
-        count: diariesData.length
-      })
+      // console.log('📚 统一获取日记数据:', {
+      //   dateRange: `${startDate} ~ ${endDate}`,
+      //   count: diariesData.length
+      // })
 
       return diariesData
 
@@ -220,7 +220,7 @@ class UnifiedCacheService {
     // 更新全局缓存
     window.__diaryCache = this.diaryCache
 
-    console.log(`📝 统一缓存服务：更新日记数据 ${date}`)
+    // console.log(`📝 统一缓存服务：更新日记数据 ${date}`)
   }
 
   // 刷新特定日期的日记数据
@@ -276,7 +276,7 @@ class UnifiedCacheService {
     delete window.__weatherCache
     delete window.__weatherList
 
-    console.log('🧹 统一缓存服务：缓存已清理')
+    // console.log('🧹 统一缓存服务：缓存已清理')
   }
 
   // 获取缓存统计信息
