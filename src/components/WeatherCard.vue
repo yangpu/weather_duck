@@ -130,33 +130,34 @@ function loadDiary() {
   }
 }
 
-function onDiaryEvent(ev: Event) {
-  const ce = ev as CustomEvent
-  const d = ce?.detail?.date
-  if (d === props.weather.date) {
-    loadDiary()
-  }
-}
-
 function onDiariesLoaded(_ev: Event) {
   // 批量日记加载完成，更新显示
   loadDiary()
 }
 
 function onDiaryUpdated(ev: Event) {
-  // 单个日记更新，立即刷新显示
+  // 单个日记更新，直接使用事件中的数据，避免重新请求
   const ce = ev as CustomEvent
   const d = ce?.detail?.date
   if (d === props.weather.date) {
-    loadDiary()
+    const updatedDiary = ce?.detail?.diary
+    if (updatedDiary) {
+      // 直接使用事件中的日记数据
+      diaryData.value = updatedDiary
+      hasDiary.value = true
+    } else {
+      // 如果是删除操作，清空日记
+      diaryData.value = null
+      hasDiary.value = false
+    }
   }
 }
 
 onMounted(() => {
   loadDiary()
-  window.addEventListener('diary:updated', onDiaryEvent)
-  window.addEventListener('diaries:loaded', onDiariesLoaded)
+  // 只监听一次 diary:updated 事件，避免重复处理
   window.addEventListener('diary:updated', onDiaryUpdated)
+  window.addEventListener('diaries:loaded', onDiariesLoaded)
   
   // 监听统一缓存服务的数据就绪事件
   window.addEventListener('diaries:data:ready', onDiariesLoaded)
@@ -164,9 +165,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('diary:updated', onDiaryEvent)
-  window.removeEventListener('diaries:loaded', onDiariesLoaded)
   window.removeEventListener('diary:updated', onDiaryUpdated)
+  window.removeEventListener('diaries:loaded', onDiariesLoaded)
   window.removeEventListener('diaries:data:ready', onDiariesLoaded)
   window.removeEventListener('unified:data:ready', onDiariesLoaded)
 })

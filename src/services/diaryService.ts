@@ -132,32 +132,17 @@ class DiaryService implements DiaryServiceInterface {
         throw new Error('Supabase not configured')
       }
 
-      // 先检查是否已存在该日期的日记
-      const existingDiary = await this.getDiaryByDate(diaryData.date, true)
-      
-      let data: DiaryData
-      if (existingDiary) {
-        // 如果存在，则更新
-        const { data: updateData, error } = await supabase
-          .from('weather_diaries')
-          .update(diaryData)
-          .eq('id', existingDiary.id!)
-          .select()
-          .single()
-        
-        if (error) throw error
-        data = updateData
-      } else {
-        // 如果不存在，则创建
-        const { data: insertData, error } = await supabase
-          .from('weather_diaries')
-          .insert([diaryData])
-          .select()
-          .single()
-        
-        if (error) throw error
-        data = insertData
-      }
+      // 使用 upsert 操作，一次请求完成插入或更新
+      const { data, error } = await supabase
+        .from('weather_diaries')
+        .upsert(diaryData, {
+          onConflict: 'date',
+          ignoreDuplicates: false
+        })
+        .select()
+        .single()
+
+      if (error) throw error
 
       // 更新缓存
       this.updateCacheAfterModification(data)
@@ -210,6 +195,28 @@ class DiaryService implements DiaryServiceInterface {
       return true
     } catch (error) {
       console.error('删除日记失败:', error)
+      throw error
+    }
+  }
+
+  async deleteDiaryByDate(date: string): Promise<boolean> {
+    try {
+      if (!supabase) {
+        throw new Error('Supabase not configured')
+      }
+
+      const { error } = await supabase
+        .from('weather_diaries')
+        .delete()
+        .eq('date', date)
+
+      if (error) throw error
+
+      // 清理相关缓存
+      this.clearDiaryCache()
+      return true
+    } catch (error) {
+      console.error('按日期删除日记失败:', error)
       throw error
     }
   }

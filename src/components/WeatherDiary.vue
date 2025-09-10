@@ -223,22 +223,37 @@ async function handleSave() {
       }
       savedContent.value = ''
       emit('saved', props.weather.date, '')
-      // 立即刷新全局数据管理器中的缓存
+      
+      // 直接更新本地缓存，避免额外的HTTP请求
       const globalManager = (window as any).__globalDataManager
       if (globalManager) {
-        try {
-          await globalManager.refreshDate(props.weather.date)
-          console.log('✅ 全局缓存已刷新（删除）')
-        } catch (error) {
-          console.warn('刷新全局缓存失败:', error)
+        const diariesMap = globalManager.dataCache?.get('diaries') as Map<string, any>
+        if (diariesMap) {
+          diariesMap.delete(props.weather.date)
         }
       }
       
+      // 更新统一缓存服务
+      const { unifiedCacheService } = await import('../services/unifiedCacheService')
+      unifiedCacheService.setDiaryData(props.weather.date, null)
+      
+      // 更新全局变量缓存（兼容性）
+      const diaryCache = (window as any).__diaryCache
+      if (diaryCache) {
+        diaryCache.delete(props.weather.date)
+      }
+      
       // 通知全局刷新（卡片实时更新）
-      window.dispatchEvent(new CustomEvent('diary:updated', { detail: { date: props.weather.date, action: 'delete' } }))
+      window.dispatchEvent(new CustomEvent('diary:updated', { 
+        detail: { 
+          date: props.weather.date, 
+          diary: null,
+          action: 'delete' 
+        } 
+      }))
     } else {
       // 保存或更新日记
-      await diaryService.createDiary({
+      const savedDiary = await diaryService.createDiary({
         date: props.weather.date,
         content: diaryText.value.trim(),
         weather_data: props.weather,
@@ -250,19 +265,33 @@ async function handleSave() {
       savedContent.value = diaryText.value.trim()
       emit('saved', props.weather.date, diaryText.value.trim())
       
-      // 立即刷新全局数据管理器中的缓存
+      // 直接更新本地缓存，避免额外的HTTP请求
       const globalManager = (window as any).__globalDataManager
       if (globalManager) {
-        try {
-          await globalManager.refreshDate(props.weather.date)
-          console.log('✅ 全局缓存已刷新')
-        } catch (error) {
-          console.warn('刷新全局缓存失败:', error)
+        const diariesMap = globalManager.dataCache?.get('diaries') as Map<string, any>
+        if (diariesMap) {
+          diariesMap.set(props.weather.date, savedDiary)
         }
       }
       
+      // 更新统一缓存服务
+      const { unifiedCacheService } = await import('../services/unifiedCacheService')
+      unifiedCacheService.setDiaryData(props.weather.date, savedDiary)
+      
+      // 更新全局变量缓存（兼容性）
+      const diaryCache = (window as any).__diaryCache
+      if (diaryCache) {
+        diaryCache.set(props.weather.date, savedDiary)
+      }
+      
       // 通知全局刷新（卡片实时更新）
-      window.dispatchEvent(new CustomEvent('diary:updated', { detail: { date: props.weather.date, action: 'save' } }))
+      window.dispatchEvent(new CustomEvent('diary:updated', { 
+        detail: { 
+          date: props.weather.date, 
+          diary: savedDiary,
+          action: 'save' 
+        } 
+      }))
     }
     handleClose()
   } catch (e) {

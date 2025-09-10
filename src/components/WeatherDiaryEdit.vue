@@ -327,8 +327,8 @@ watch(() => props.visible, async (newVisible, oldVisible) => {
 // 添加一个专门监听 weather 变化的 watcher
 watch(() => props.weather, async (newWeather, oldWeather) => {
   // 如果对话框已经打开且 weather 数据发生变化，重新加载
-  if (props.visible && newWeather?.date && newWeather.date !== oldWeather?.date) {
-
+  // 但是如果正在保存，则跳过重新加载
+  if (props.visible && !saving.value && newWeather?.date && newWeather.date !== oldWeather?.date) {
     // 强制重新加载日记数据
     await loadDiary()
   }
@@ -336,8 +336,8 @@ watch(() => props.weather, async (newWeather, oldWeather) => {
 
 // 专门监听日期变化的 watcher
 watch(() => props.weather?.date, async (newDate, oldDate) => {
-  if (props.visible && newDate && newDate !== oldDate) {
-
+  // 如果正在保存，则跳过重新加载
+  if (props.visible && !saving.value && newDate && newDate !== oldDate) {
     await loadDiary()
   }
 })
@@ -469,7 +469,7 @@ function removeVideo(index: number) {
   selectedVideos.value.splice(index, 1)
 }
 
-// 保存日记
+// 保存日记 - 优化版本：只发起一次HTTP请求
 async function handleSave() {
   if (!props.weather || !props.weather.date) {
     handleClose()
@@ -520,7 +520,7 @@ async function handleSave() {
           completedTasks++
           totalProgress.value = (completedTasks / totalTasks) * 100
         } catch (error) {
-
+          console.error('图片上传失败:', error)
           image.uploading = false
         }
       }
@@ -560,13 +560,13 @@ async function handleSave() {
           completedTasks++
           totalProgress.value = (completedTasks / totalTasks) * 100
         } catch (error) {
-
+          console.error('视频上传失败:', error)
           video.uploading = false
         }
       }
     }
 
-    // 保存日记到数据库
+    // 保存日记到数据库 - 只发起一次HTTP请求
     saveProgressText.value = '正在保存日记...'
     
     // 准备日记数据
@@ -580,16 +580,23 @@ async function handleSave() {
       city: cityLocation.value.trim()
     }
     
-    // 如果内容为空，删除日记
+    let savedDiary: any = null
+    
+    // 如果内容为空，删除日记（通过传递空内容给upsert让数据库处理）
     if (!diaryData.content && !diaryData.images.length && !diaryData.videos.length && !diaryData.mood && !diaryData.city) {
-      const existingDiary = await diaryService.getDiaryByDate(props.weather.date, true)
-      if (existingDiary?.id) {
-        await diaryService.deleteDiary(existingDiary.id)
+      // 直接调用删除服务，避免额外查询
+      try {
+        await diaryService.deleteDiaryByDate(props.weather.date)
         saveProgressText.value = '日记已删除'
+        savedDiary = null
+      } catch (error) {
+        // 如果删除失败（可能是因为日记不存在），忽略错误
+        console.log('删除日记时未找到记录，可能已被删除')
+        savedDiary = null
       }
     } else {
-      // 保存或更新日记
-      await diaryService.createDiary(diaryData)
+      // 保存或更新日记 - 这里只发起一次HTTP请求
+      savedDiary = await diaryService.createDiary(diaryData)
       saveProgressText.value = '保存完成！'
     }
     
@@ -597,36 +604,57 @@ async function handleSave() {
     totalProgress.value = 100
     saveProgressText.value = '保存完成！'
     
-    emit('saved', props.weather.date, diaryText.value.trim())
-    
-    // 立即刷新全局数据管理器中的缓存
+    // 直接更新本地缓存，避免额外的HTTP请求
     const globalManager = (window as any).__globalDataManager
     if (globalManager) {
-      try {
-        await globalManager.refreshDate(props.weather.date)
-      } catch (error) {
-        console.warn('刷新全局缓存失败:', error)
+      const diariesMap = globalManager.dataCache?.get('diaries') as Map<string, any>
+      if (diariesMap) {
+        if (savedDiary) {
+          diariesMap.set(props.weather.date, savedDiary)
+        } else {
+          diariesMap.delete(props.weather.date)
+        }
       }
     }
     
-    // 通知全局刷新（兼容性）
+    // 更新统一缓存服务
+    const { unifiedCacheService } = await import('../services/unifiedCacheService')
+    unifiedCacheService.setDiaryData(props.weather.date, savedDiary)
+    
+    // 更新全局变量缓存（兼容性）
+    const diaryCache = (window as any).__diaryCache
+    if (diaryCache) {
+      if (savedDiary) {
+        diaryCache.set(props.weather.date, savedDiary)
+      } else {
+        diaryCache.delete(props.weather.date)
+      }
+    }
+    
+    // 通知所有组件数据已更新，无需重新请求
     window.dispatchEvent(new CustomEvent('diary:updated', { 
-      detail: { date: props.weather.date, action: 'save' } 
+      detail: { 
+        date: props.weather.date, 
+        diary: savedDiary,
+        action: savedDiary ? 'save' : 'delete'
+      } 
     }))
+    
+    emit('saved', props.weather.date, diaryText.value.trim())
     
     setTimeout(() => {
       handleClose()
     }, 500)
     
   } catch (e) {
-
+    console.error('保存日记失败:', e)
     saveProgressText.value = '保存失败，请重试'
   } finally {
     saving.value = false
   }
 }
 
-// 删除日记
+// 删除日记 - 优化版本：只发起一次HTTP请求
 async function handleDelete() {
   if (!props.weather || !props.weather.date) return
   
@@ -644,31 +672,42 @@ async function handleDelete() {
     cancelBtn: '取消',
     onConfirm: async () => {
       try {
-        const existingDiary = await diaryService.getDiaryByDate(props.weather.date)
-        if (existingDiary?.id) {
-          await diaryService.deleteDiary(existingDiary.id)
-        }
-        emit('saved', props.weather.date, '')
+        // 直接按日期删除，避免先查询的额外请求
+        await diaryService.deleteDiaryByDate(props.weather.date)
         
-        // 立即刷新全局数据管理器中的缓存
+        // 直接更新本地缓存，避免额外的HTTP请求
         const globalManager = (window as any).__globalDataManager
         if (globalManager) {
-          try {
-            await globalManager.refreshDate(props.weather.date)
-          } catch (error) {
-            console.warn('刷新全局缓存失败:', error)
+          const diariesMap = globalManager.dataCache?.get('diaries') as Map<string, any>
+          if (diariesMap) {
+            diariesMap.delete(props.weather.date)
           }
         }
         
-        // 通知全局刷新（兼容性）
+        // 更新统一缓存服务
+        const { unifiedCacheService } = await import('../services/unifiedCacheService')
+        unifiedCacheService.setDiaryData(props.weather.date, null)
+        
+        // 更新全局变量缓存（兼容性）
+        const diaryCache = (window as any).__diaryCache
+        if (diaryCache) {
+          diaryCache.delete(props.weather.date)
+        }
+        
+        // 通知所有组件数据已更新，无需重新请求
         window.dispatchEvent(new CustomEvent('diary:updated', { 
-          detail: { date: props.weather.date, action: 'delete' } 
+          detail: { 
+            date: props.weather.date, 
+            diary: null,
+            action: 'delete' 
+          } 
         }))
         
+        emit('saved', props.weather.date, '')
         handleClose()
         confirmDialog.destroy()
       } catch (e) {
-
+        console.error('删除日记失败:', e)
         confirmDialog.destroy()
       }
     },

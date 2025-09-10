@@ -485,12 +485,20 @@ function handleEditDateChange(date: string) {
 async function handleDiarySaved(date: string, content: string) {
   // console.log(`日记已保存: ${date}`, content ? '有内容' : '已删除')
   
-  // 使用统一缓存服务刷新该日期的数据
+  // 直接从缓存获取数据，避免重新请求
   try {
-    await unifiedCacheService.refreshDiaryData(date)
+    // 从全局缓存获取最新的日记数据
+    const globalManager = (window as any).__globalDataManager
+    let diary = null
     
-    // 同时更新本地缓存（兼容性）
-    const diary = await diaryService.refreshDiaryByDate(date)
+    if (globalManager) {
+      const diariesMap = globalManager.dataCache?.get('diaries') as Map<string, any>
+      if (diariesMap) {
+        diary = diariesMap.get(date) || null
+      }
+    }
+    
+    // 更新本地缓存
     if (diary) {
       diaryCache.value.set(date, diary)
     } else {

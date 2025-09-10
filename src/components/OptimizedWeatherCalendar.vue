@@ -167,9 +167,25 @@ onMounted(() => {
 
 function handleDiarySaved(event: Event) {
   const customEvent = event as CustomEvent
-  const { date: _date } = customEvent.detail
-  // 重新加载当前月份的数据
-  loadMonthDiaries()
+  const { date, diary } = customEvent.detail
+  
+  // 直接更新本地缓存，避免重新请求整个月的数据
+  if (monthDiaries.value) {
+    const existingIndex = monthDiaries.value.findIndex(d => d.date === date)
+    if (diary) {
+      // 更新或添加日记
+      if (existingIndex >= 0) {
+        monthDiaries.value[existingIndex] = diary
+      } else {
+        monthDiaries.value.push(diary)
+      }
+    } else {
+      // 删除日记
+      if (existingIndex >= 0) {
+        monthDiaries.value.splice(existingIndex, 1)
+      }
+    }
+  }
 }
 
 interface Emits {
