@@ -323,7 +323,6 @@ export class WeatherApiService {
   ): Promise<WeatherData[]> {
     // console.log(`获取天气数据: ${startDate} 到 ${endDate}`)
     
-    const today = new Date().toISOString().slice(0, 10)
     const archiveMaxDate = '2025-09-09' // Archive API的最大支持日期
     
     try {

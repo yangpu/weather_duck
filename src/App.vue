@@ -165,6 +165,7 @@ import { diaryService } from './services/diaryService'
 import { unifiedCacheService } from './services/unifiedCacheService'
 import { globalDataManager } from './services/globalDataManager'
 import type { WeatherData } from './types/weather'
+
 import { GeocodingService } from './services/geocoding'
 import { initializeSupabase } from './utils/initSupabase'
 
@@ -207,7 +208,7 @@ function calculateScrollbarWidth() {
   const outer = document.createElement('div')
   outer.style.visibility = 'hidden'
   outer.style.overflow = 'scroll'
-  outer.style.msOverflowStyle = 'scrollbar'
+  ;(outer.style as any).msOverflowStyle = 'scrollbar'
   document.body.appendChild(outer)
 
   const inner = document.createElement('div')
@@ -439,10 +440,10 @@ function handleWeatherCardClick(weather: WeatherData) {
   }
   
   // 根据日记内容决定显示查看还是编辑页面
-  const hasContent = diary && (
+  const hasContent = diary && !Array.isArray(diary) && (
     diary.content?.trim() || 
     diary.images?.length || 
-    diary.video || 
+    diary.videos?.length || 
     diary.mood
   )
   
@@ -482,7 +483,7 @@ function handleEditDateChange(date: string) {
 }
 
 // 处理日记保存
-async function handleDiarySaved(date: string, content: string) {
+async function handleDiarySaved(date: string, _content: string) {
   // console.log(`日记已保存: ${date}`, content ? '有内容' : '已删除')
   
   // 直接从缓存获取数据，避免重新请求
@@ -516,49 +517,10 @@ function showAbout() {
   aboutVisible.value = true
 }
 
-// 处理加载更多天气数据
-async function handleLoadMore() {
-  if (loading.value) return
-  
-  loading.value = true
-  try {
-    // 计算新的日期范围（从当前开始日期往前推7天）
-    const currentStartDate = new Date(startDate.value)
-    const newEndDate = new Date(currentStartDate)
-    newEndDate.setDate(currentStartDate.getDate() - 1) // 新的结束日期是当前开始日期的前一天
-    
-    const newStartDate = new Date(newEndDate)
-    newStartDate.setDate(newEndDate.getDate() - 6) // 往前7天
-    
-    const newStartDateStr = newStartDate.toISOString().slice(0, 10)
-    const newEndDateStr = newEndDate.toISOString().slice(0, 10)
-    
-    // 获取新的天气数据
-    const newWeatherData = await weatherService.getWeatherForDateRange(
-      latitude.value,
-      longitude.value,
-      newStartDateStr,
-      newEndDateStr
-    )
-    
-    if (newWeatherData && newWeatherData.length > 0) {
-      // 将新数据添加到现有数据中，并按日期倒序排列
-      const allWeatherData = [...weatherList.value, ...newWeatherData]
-      weatherList.value = allWeatherData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      
-      // 更新日期范围
-      startDate.value = newStartDateStr
-      dateRangeValue.value = [startDate.value, endDate.value]
-    }
-  } catch (error) {
-    errorMessage.value = '加载更多数据失败，请稍后重试'
-  } finally {
-    loading.value = false
-  }
-}
+
 
 // 处理加载后7天数据
-async function handleLoadNext(startDateStr, endDateStr, isForecast) {
+async function handleLoadNext(startDateStr: string, endDateStr: string, isForecast: boolean) {
   if (loadingNext.value) return
 
   loadingNext.value = true
@@ -597,7 +559,7 @@ async function handleLoadNext(startDateStr, endDateStr, isForecast) {
         hasLoadedFuture3Days.value = true
       }
       
-      const dataType = isForecast ? '预测' : '历史'
+
       // console.log(`✅ 成功加载后7天${dataType}数据: ${newWeatherData.length} 条`)
       
       // 加载对应时间段的日记数据
@@ -617,8 +579,8 @@ async function handleLoadNext(startDateStr, endDateStr, isForecast) {
           // console.log(`✅ 成功加载并缓存日记数据: ${newDiaries.length} 条`)
           
           // 验证缓存是否成功
-          const cachedDiaries = unifiedCacheService.getDiaryData()
-          // console.log(`📝 缓存验证 - 总日记数:`, cachedDiaries.length, '日期列表:', cachedDiaries.map(d => d.date))
+          // const _cachedDiaries = unifiedCacheService.getDiaryData()
+          // console.log(`📝 缓存验证 - 总日记数:`, _cachedDiaries.length, '日期列表:', _cachedDiaries.map(d => d.date))
           
           // 触发事件通知WeatherCard组件更新
           window.dispatchEvent(new CustomEvent('diaries:data:ready', {
@@ -698,8 +660,8 @@ async function handleLoadPrevious(startDateStr: string, endDateStr: string) {
           // console.log(`✅ 成功加载并缓存日记数据: ${newDiaries.length} 条`)
           
           // 验证缓存是否成功
-          const cachedDiaries = unifiedCacheService.getDiaryData()
-          // console.log(`📝 缓存验证 - 总日记数:`, cachedDiaries.length, '日期列表:', cachedDiaries.map(d => d.date))
+          // const _cachedDiaries = unifiedCacheService.getDiaryData()
+          // console.log(`📝 缓存验证 - 总日记数:`, _cachedDiaries.length, '日期列表:', _cachedDiaries.map(d => d.date))
           
           // 触发事件通知WeatherCard组件更新
           window.dispatchEvent(new CustomEvent('diaries:data:ready', {

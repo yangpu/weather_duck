@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import LoadNextCard from '../components/LoadNextCard.vue'
 import LoadPreviousCard from '../components/LoadPreviousCard.vue'
 import WeatherCard from '../components/WeatherCard.vue'
@@ -117,8 +117,7 @@ function generateMockWeatherData(startDate: string, endDate: string, isForecast 
       cloudCover: Math.round(Math.random() * 100),
       windDirection: '东南风',
       windSpeed: Math.round(Math.random() * 20 + 5),
-      humidity: Math.round(Math.random() * 40 + 40),
-      pressure: Math.round(Math.random() * 50 + 1000)
+      humidity: Math.round(Math.random() * 40 + 40)
     })
     
     current.setDate(current.getDate() + 1)

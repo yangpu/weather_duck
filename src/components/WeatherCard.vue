@@ -111,15 +111,15 @@ function loadDiary() {
     // 优化：优先从统一缓存服务获取数据
     const diary = unifiedCacheService.getDiaryData(props.weather.date)
     hasDiary.value = !!diary
-    diaryData.value = diary
+    diaryData.value = Array.isArray(diary) ? diary[0] : diary
     
     if (diary) {
       // console.log(`📦 WeatherCard: 从统一缓存获取日记 ${props.weather.date}`, diary)
     } else {
       // console.log(`📦 WeatherCard: 日记不存在 ${props.weather.date}`)
       // 调试：检查缓存中的所有日记数据
-      const allDiaries = unifiedCacheService.getDiaryData()
-      // console.log(`📦 WeatherCard: 缓存中的所有日记:`, allDiaries.map(d => d.date))
+      // const _allDiaries = unifiedCacheService.getDiaryData()
+      // console.log(`📦 WeatherCard: 缓存中的所有日记:`, _allDiaries.map(d => d.date))
     }
     
     return

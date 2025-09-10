@@ -43,7 +43,8 @@ function loadDiaryMoods() {
     const moodMap: Record<string, string> = {}
     const dataMap: Record<string, any> = {}
     
-    diaries.forEach((diary: any) => {
+    const diariesArray = Array.isArray(diaries) ? diaries : diaries ? [diaries] : []
+    diariesArray.forEach((diary: any) => {
       if (diary.mood) {
         moodMap[diary.date] = diary.mood
       }

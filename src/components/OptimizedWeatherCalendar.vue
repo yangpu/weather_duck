@@ -53,7 +53,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { ChevronLeftIcon } from 'tdesign-icons-vue-next'
 import { OptimizedStorageAdapter } from '../services/optimizedStorageAdapter'
-import { WeatherDiary } from '../config/supabase'
+import type { WeatherDiary } from '../config/supabase'
 import { WeatherData } from '../types/weather'
 
 interface CalendarDay {
@@ -69,7 +69,7 @@ interface CalendarDay {
 const currentDate = ref(new Date())
 const selectedDate = ref('')
 const loading = ref(false)
-const monthDiaries = ref<Record<string, WeatherDiary>>({})
+const monthDiaries = ref<WeatherDiary[]>([])
 
 const weekdays = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -101,7 +101,7 @@ const calendarDays = computed(() => {
   for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
     const dateStr = d.toISOString().split('T')[0]
     const isCurrentMonth = d.getMonth() === month
-    const diary = monthDiaries.value[dateStr]
+    const diary = monthDiaries.value.find(d => d.date === dateStr)
     
     days.push({
       date: dateStr,
@@ -129,7 +129,8 @@ async function loadMonthDiaries() {
     const month = currentDate.value.getMonth() + 1
     
     // 使用优化的批量查询，一次性加载整个月的数据
-    monthDiaries.value = await OptimizedStorageAdapter.getMonthDiaries(year, month)
+    const monthData = await OptimizedStorageAdapter.getMonthDiaries(year, month)
+    monthDiaries.value = Object.values(monthData)
   } catch (error) {
     console.error('加载月份日记失败:', error)
   } finally {
@@ -152,7 +153,8 @@ function nextMonth() {
 function selectDate(date: string) {
   selectedDate.value = date
   // 触发日期选择事件
-  emit('dateSelected', date, monthDiaries.value[date])
+  const diary = monthDiaries.value.find(d => d.date === date)
+  emit('dateSelected', date, diary)
 }
 
 function getDiaryPreview(diary?: WeatherDiary): string {
@@ -170,20 +172,18 @@ function handleDiarySaved(event: Event) {
   const { date, diary } = customEvent.detail
   
   // 直接更新本地缓存，避免重新请求整个月的数据
-  if (monthDiaries.value) {
-    const existingIndex = monthDiaries.value.findIndex(d => d.date === date)
-    if (diary) {
-      // 更新或添加日记
-      if (existingIndex >= 0) {
-        monthDiaries.value[existingIndex] = diary
-      } else {
-        monthDiaries.value.push(diary)
-      }
+  const existingIndex = monthDiaries.value.findIndex(d => d.date === date)
+  if (diary) {
+    // 更新或添加日记
+    if (existingIndex >= 0) {
+      monthDiaries.value[existingIndex] = diary
     } else {
-      // 删除日记
-      if (existingIndex >= 0) {
-        monthDiaries.value.splice(existingIndex, 1)
-      }
+      monthDiaries.value.push(diary)
+    }
+  } else {
+    // 删除日记
+    if (existingIndex >= 0) {
+      monthDiaries.value.splice(existingIndex, 1)
     }
   }
 }

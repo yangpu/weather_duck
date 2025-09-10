@@ -103,7 +103,7 @@ import { ref, watch, computed, onMounted } from 'vue'
 import { WeatherData } from '../types/weather'
 import { DateUtils } from '../utils/dateUtils'
 import { ImageUtils, HEICConverter } from '../utils/imageUtils'
-import { getOptimalImageConfig, getAcceptTypes, getCameraRecommendations } from '../config/mobileImageConfig'
+import { getOptimalImageConfig, getAcceptTypes } from '../config/mobileImageConfig'
 
 import { diaryService } from '../services/diaryService'
 
@@ -133,7 +133,7 @@ const processingProgress = ref<{ current: number; total: number; fileName: strin
 // 设备优化配置
 const deviceConfig = getOptimalImageConfig()
 const acceptTypes = getAcceptTypes()
-const cameraRecommendations = getCameraRecommendations()
+// const _cameraRecommendations = getCameraRecommendations()
 
 const savedPreview = computed(() => {
   const text = savedContent.value.trim()
