@@ -48,12 +48,38 @@
         </div>
         <div class="image-uploader">
           <t-space align="center">
-            <input type="file" multiple accept="image/*" @change="onFilesChange" />
+            <input 
+              type="file" 
+              multiple 
+              :accept="acceptTypes" 
+              @change="onFilesChange" 
+              :disabled="imageProcessing"
+            />
             <t-button v-if="imageList.length > 0" variant="outline" theme="danger" size="small" @click="clearAllImages">清空图片</t-button>
           </t-space>
+          
+          <!-- 图片处理进度 -->
+          <div v-if="imageProcessing" class="processing-status">
+            <t-loading size="small" />
+            <span class="processing-text">
+              正在处理图片 {{ processingProgress.current }}/{{ processingProgress.total }}
+              <br>
+              <small>{{ processingProgress.fileName }}</small>
+            </span>
+          </div>
+          
+          <!-- 图片格式提示 -->
+          <div class="format-tip">
+            <small>支持格式：{{ deviceConfig.supportedFormats.map(f => f.split('/')[1].toUpperCase()).join('、') }}</small>
+            <br>
+            <small>单张图片最大{{ deviceConfig.maxFileSize }}MB，自动压缩至{{ deviceConfig.maxWidth }}x{{ deviceConfig.maxHeight }}</small>
+            <br>
+            <small v-if="deviceConfig.enableHEICConversion">✅ 自动转换iPhone HEIC格式</small>
+          </div>
+          
           <div class="images-preview" v-if="imageList.length > 0">
             <div class="image-item" v-for="(img, index) in imageList" :key="index">
-              <img :src="img" alt="预览" />
+              <img :src="img" alt="预览" @error="handleImageError(index)" />
               <t-button size="small" theme="danger" variant="text" @click="removeImage(index)">×</t-button>
             </div>
           </div>
@@ -76,6 +102,8 @@
 import { ref, watch, computed, onMounted } from 'vue'
 import { WeatherData } from '../types/weather'
 import { DateUtils } from '../utils/dateUtils'
+import { ImageUtils, HEICConverter } from '../utils/imageUtils'
+import { getOptimalImageConfig, getAcceptTypes, getCameraRecommendations } from '../config/mobileImageConfig'
 
 import { diaryService } from '../services/diaryService'
 
@@ -99,6 +127,13 @@ const imageData = ref<string>('') // 封面（第一张）
 const imageList = ref<string[]>([])
 const imageDirty = ref(false)
 const isLoading = ref(false)
+const imageProcessing = ref(false)
+const processingProgress = ref<{ current: number; total: number; fileName: string }>({ current: 0, total: 0, fileName: '' })
+
+// 设备优化配置
+const deviceConfig = getOptimalImageConfig()
+const acceptTypes = getAcceptTypes()
+const cameraRecommendations = getCameraRecommendations()
 
 const savedPreview = computed(() => {
   const text = savedContent.value.trim()
@@ -301,26 +336,85 @@ async function handleSave() {
   }
 }
 
-function onFilesChange(e: Event) {
+async function onFilesChange(e: Event) {
   const input = e.target as HTMLInputElement
   const files = input.files
-  if (!files) return
+  if (!files || files.length === 0) return
   
-  const newImages: string[] = []
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i]
-    const reader = new FileReader()
-    reader.onload = () => {
-      newImages.push(String(reader.result || ''))
-      if (newImages.length === files.length) {
-        imageList.value = [...imageList.value, ...newImages]
-        if (imageList.value.length > 0) {
-          imageData.value = imageList.value[0]
+  imageProcessing.value = true
+  processingProgress.value = { current: 0, total: files.length, fileName: '' }
+  
+  try {
+    const fileArray = Array.from(files)
+    const newImages: string[] = []
+    
+    // 验证和处理每个文件
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i]
+      processingProgress.value = { current: i + 1, total: fileArray.length, fileName: file.name }
+      
+      try {
+        // 验证文件
+        const validation = ImageUtils.validateImageFile(file)
+        if (!validation.valid) {
+          console.warn(`跳过文件 ${file.name}: ${validation.error}`)
+          continue
         }
-        imageDirty.value = true
+        
+        // 处理HEIC格式
+        let processedFile = file
+        if (HEICConverter.isHEICFormat(file)) {
+          try {
+            processedFile = await HEICConverter.convertToJPEG(file)
+            console.log(`HEIC文件 ${file.name} 已转换为JPEG`)
+          } catch (error) {
+            console.error(`HEIC转换失败 ${file.name}:`, error)
+            continue
+          }
+        }
+        
+        // 压缩和优化图片
+        const result = await ImageUtils.processImage(processedFile, {
+          maxWidth: deviceConfig.maxWidth,
+          maxHeight: deviceConfig.maxHeight,
+          quality: deviceConfig.quality,
+          format: 'jpeg',
+          maxFileSize: deviceConfig.maxFileSize
+        })
+        
+        newImages.push(result.dataUrl)
+        
+        // 显示压缩信息
+        const compressionRatio = ((result.originalSize - result.compressedSize) / result.originalSize * 100).toFixed(1)
+        console.log(`图片 ${file.name} 处理完成:`, {
+          原始大小: `${(result.originalSize / 1024 / 1024).toFixed(2)}MB`,
+          压缩后大小: `${(result.compressedSize / 1024 / 1024).toFixed(2)}MB`,
+          压缩率: `${compressionRatio}%`
+        })
+        
+      } catch (error) {
+        console.error(`处理图片 ${file.name} 失败:`, error)
+        // 继续处理其他图片
       }
     }
-    reader.readAsDataURL(file)
+    
+    // 更新图片列表
+    if (newImages.length > 0) {
+      imageList.value = [...imageList.value, ...newImages]
+      if (imageList.value.length > 0) {
+        imageData.value = imageList.value[0]
+      }
+      imageDirty.value = true
+    }
+    
+    // 清空input，允许重复选择相同文件
+    input.value = ''
+    
+  } catch (error) {
+    console.error('批量处理图片失败:', error)
+  } finally {
+    imageProcessing.value = false
+    processingProgress.value = { current: 0, total: 0, fileName: '' }
   }
 }
 
@@ -338,6 +432,12 @@ function clearAllImages() {
   imageData.value = ''
   imageList.value = []
   imageDirty.value = true
+}
+
+function handleImageError(index: number) {
+  console.error(`图片预览失败，索引: ${index}`)
+  // 可以选择移除有问题的图片
+  // removeImage(index)
 }
 
 function handleClose() {
@@ -438,6 +538,32 @@ function handleVisibleChange(value: boolean) {
 
 .image-uploader {
   margin-bottom: 12px;
+}
+
+.processing-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: #f0f7ff;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #0052d9;
+}
+
+.processing-text {
+  line-height: 1.4;
+}
+
+.format-tip {
+  margin: 8px 0;
+  padding: 6px 8px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.3;
 }
 
 .images-preview {
