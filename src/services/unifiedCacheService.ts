@@ -56,6 +56,11 @@ class UnifiedCacheService {
   async initializeData(startDate: string, endDate: string, latitude: number, longitude: number, forceRefresh: boolean = false): Promise<InitializeDataResult> {
     const cacheKey = `${startDate}-${endDate}-${latitude}-${longitude}`
 
+    // 如果强制刷新，清除相关的请求Promise
+    if (forceRefresh) {
+      this.requestPromises.delete(cacheKey)
+    }
+
     // 检查是否已经初始化相同的数据范围
     if (!forceRefresh &&
       this.isInitialized &&
@@ -66,12 +71,12 @@ class UnifiedCacheService {
       }
     }
 
-    // 防止重复请求
-    if (this.requestPromises.has(cacheKey)) {
+    // 防止重复请求（除非强制刷新）
+    if (!forceRefresh && this.requestPromises.has(cacheKey)) {
       return await this.requestPromises.get(cacheKey)!
     }
 
-    const requestPromise = this._performInitialization(startDate, endDate, latitude, longitude, cacheKey)
+    const requestPromise = this._performInitialization(startDate, endDate, latitude, longitude, cacheKey, forceRefresh)
     this.requestPromises.set(cacheKey, requestPromise)
 
     try {
@@ -82,10 +87,10 @@ class UnifiedCacheService {
     }
   }
 
-  private async _performInitialization(startDate: string, endDate: string, latitude: number, longitude: number, cacheKey: string): Promise<InitializeDataResult> {
+  private async _performInitialization(startDate: string, endDate: string, latitude: number, longitude: number, cacheKey: string, forceRefresh: boolean = false): Promise<InitializeDataResult> {
     try {
       // 优化1: 合并天气请求 - 使用单一的增强天气API替代多次forecast请求
-      const weatherPromise = this._getOptimizedWeatherData(latitude, longitude, startDate, endDate)
+      const weatherPromise = this._getOptimizedWeatherData(latitude, longitude, startDate, endDate, forceRefresh)
 
       // 优化2: 统一日记请求 - 一次性获取日期范围内的所有日记
       const diariesPromise = this._getOptimizedDiariesData(startDate, endDate)
@@ -119,14 +124,15 @@ class UnifiedCacheService {
   }
 
   // 优化的天气数据获取 - 合并多个forecast请求
-  private async _getOptimizedWeatherData(latitude: number, longitude: number, startDate: string, endDate: string): Promise<WeatherData[]> {
+  private async _getOptimizedWeatherData(latitude: number, longitude: number, startDate: string, endDate: string, forceRefresh: boolean = false): Promise<WeatherData[]> {
     try {
       // 使用增强版天气API，一次性获取历史+当前+预测数据
       const weatherData = await weatherService.getWeatherForDateRange(
         latitude,
         longitude,
         startDate,
-        endDate
+        endDate,
+        forceRefresh
       )
 
       // 如果需要当前天气补充信息，只在今天的数据需要时才请求
@@ -135,7 +141,7 @@ class UnifiedCacheService {
 
       if (todayWeather) {
         try {
-          const currentWeather = await weatherService.getCurrentWeather(latitude, longitude)
+          const currentWeather = await weatherService.getCurrentWeather(latitude, longitude, forceRefresh)
           if (currentWeather && currentWeather.temperature?.current !== undefined) {
             // 合并当前天气信息到今天的数据中
             Object.assign(todayWeather, {

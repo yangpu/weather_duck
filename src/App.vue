@@ -15,42 +15,19 @@
       class="no-print"
     >
       <template #header-actions>
-        <div class="toolbar">
-          <t-input
-            class="control control--full"
-            v-model="cityKeyword"
-            placeholder="搜索城市（中文/英文）"
-            @change="onCityInputChange"
-            @enter="onCitySearch"
-            clearable
-          />
-          <t-select
-            class="control control--full"
-            v-model="selectedCity"
-            :options="cityOptions"
-            placeholder="选择城市"
-            @change="onCitySelected"
-            :filterable="false"
-          />
-          <t-button 
-            class="control" 
-            variant="outline" 
-            @click="useMyLocation"
-            :loading="locating"
-          >
-            {{ locating ? '定位中...' : '使用定位' }}
-          </t-button>
-          <t-date-range-picker
-            class="control control--full"
-            v-model:value="dateRangeValue"
-            allow-input
-            clearable
-            :placeholder="['开始日期', '结束日期']"
-            @change="onDateRangeChange"
-          />
-          <t-button class="control" theme="primary" @click="fetchAll">获取天气</t-button>
-          <t-button class="control" variant="outline" @click="printPage">打印</t-button>
-        </div>
+        <HeaderActions
+          v-model:cityKeyword="cityKeyword"
+          v-model:cityOptions="cityOptions"
+          v-model:selectedCity="selectedCity"
+          v-model:dateRangeValue="dateRangeValue"
+          :locating="locating"
+          :displayAddress="displayAddress"
+          @citySelected="onCitySelected"
+          @useMyLocation="useMyLocation"
+          @dateRangeChange="onDateRangeChange"
+          @fetchAll="fetchAll"
+          @printPage="printPage"
+        />
       </template>
     </AppHeader>
 
@@ -141,6 +118,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { MessagePlugin } from 'tdesign-vue-next'
 
 // 扩展Window接口以支持markLoaded函数
 declare global {
@@ -158,6 +136,7 @@ import AboutDialog from './components/AboutDialog.vue'
 import OfflineIndicator from './components/OfflineIndicator.vue'
 import PWAInstall from './components/PWAInstall.vue'
 import AppHeader from './components/AppHeader.vue'
+import HeaderActions from './components/HeaderActions.vue'
 import { WeatherApiService } from './services/weatherApi'
 
 import { weatherService } from './services/weatherService'
@@ -275,17 +254,7 @@ function onDateRangeChange(val: [Date, Date] | [string, string]) {
   endDate.value = e
 }
 
-async function onCityInputChange() {
-  if (!cityKeyword.value || cityKeyword.value.trim().length < 2) {
-    cityOptions.value = []
-    return
-  }
-  cityOptions.value = await GeocodingService.searchCity(cityKeyword.value.trim())
-}
 
-async function onCitySearch() {
-  await onCityInputChange()
-}
 
 async function onCitySelected(val: string) {
   const target = cityOptions.value.find((o) => o.value === val)
@@ -311,10 +280,16 @@ async function useMyLocation() {
     displayAddress.value = await GeocodingService.reverseGeocode(latitude.value, longitude.value)
     setSelectedToCurrentLocation(displayAddress.value)
     
+    // 定位成功提示
+    MessagePlugin.success('定位成功！')
+    
     await fetchAll()
   } catch (e: any) {
     console.error('定位失败:', e)
-    errorMessage.value = e?.message || '定位失败，请检查浏览器定位权限或网络连接'
+    
+    // 使用tdesign的MessagePlugin显示错误提示
+    const errorMsg = e?.message || '定位失败，请检查浏览器定位权限或网络连接'
+    MessagePlugin.error(errorMsg)
     
     // 定位失败时使用默认坐标（广东深圳）
     latitude.value = 22.5429
@@ -323,6 +298,9 @@ async function useMyLocation() {
     displayAddress.value = '深圳市 · 广东省 · 中国'
     setSelectedToCurrentLocation('深圳市 · 广东省 · 中国（默认）')
     
+    // 显示使用默认位置的提示
+    MessagePlugin.warning('已使用默认位置：深圳市')
+    
     await fetchAll()
   } finally {
     locating.value = false
@@ -330,26 +308,53 @@ async function useMyLocation() {
 }
 
 async function fetchAll() {
+  console.log('🔄 fetchAll 被调用', {
+    startDate: startDate.value,
+    endDate: endDate.value,
+    latitude: latitude.value,
+    longitude: longitude.value
+  })
+  
   errorMessage.value = ''
   if (!DateUtils.isValidDateRange(startDate.value, endDate.value)) {
     errorMessage.value = '日期范围不合法（开始不能晚于结束，且最多30天）。'
     return
   }
+  
+  console.log('📅 日期范围验证通过，开始加载数据...')
   loading.value = true
+  
   try {
-    // 使用统一缓存服务，优化天气和日记数据请求
+    console.log('🧹 开始清除缓存...')
+    // 清除所有缓存，强制重新获取数据
+    unifiedCacheService.clearCache()
+    
+    // 清除全局数据管理器缓存
+    const globalManager = (window as any).__globalDataManager
+    if (globalManager) {
+      globalManager.clearCache()
+    }
+    
+    // 清除本地日记缓存
+    diaryCache.value.clear()
+    ;(window as any).__diaryCache = diaryCache.value
+    
+    console.log('🌐 开始请求天气数据...')
+    // 使用统一缓存服务，强制重新获取天气和日记数据
     const { weatherData } = await unifiedCacheService.initializeData(
       startDate.value,
       endDate.value,
       latitude.value,
-      longitude.value
+      longitude.value,
+      true // forceRefresh = true，强制刷新
     )
+    
+    console.log('✅ 天气数据获取成功，数据量:', weatherData.length)
     
     // 按日期倒序排列显示
     weatherList.value = [...weatherData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
     // 确保全局数据管理器也被正确初始化
-    const globalManager = (window as any).__globalDataManager
     if (globalManager) {
       await globalManager.initialize(
         startDate.value,
@@ -920,27 +925,6 @@ body[style*="overflow: hidden"] {
   color: #999;
   font-style: italic;
 }
-/* 顶部工具栏自适应 */
-.toolbar {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, max-content));
-  align-items: center;
-  gap: 8px 12px;
-}
-.control {
-  min-width: 120px;
-}
-.control--full {
-  min-width: 200px;
-}
-@media (max-width: 992px) {
-  .toolbar {
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  }
-  .control--full {
-    width: 100%;
-  }
-}
 @media (max-width: 768px) {
   .app-header {
     align-items: flex-start;
@@ -948,15 +932,8 @@ body[style*="overflow: hidden"] {
   .header-left h1 {
     font-size: 16px;
   }
-  .toolbar {
-    grid-template-columns: 1fr 1fr;
-  }
 }
 @media (max-width: 480px) {
-  .toolbar {
-    grid-template-columns: 1fr;
-  }
-  
   .footer-author {
     flex-direction: column;
     gap: 6px;
