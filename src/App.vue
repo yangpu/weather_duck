@@ -308,12 +308,12 @@ async function useMyLocation() {
 }
 
 async function fetchAll() {
-  console.log('🔄 fetchAll 被调用', {
-    startDate: startDate.value,
-    endDate: endDate.value,
-    latitude: latitude.value,
-    longitude: longitude.value
-  })
+  // console.log('🔄 fetchAll 被调用', {
+  //   startDate: startDate.value,
+  //   endDate: endDate.value,
+  //   latitude: latitude.value,
+  //   longitude: longitude.value
+  // })
   
   errorMessage.value = ''
   if (!DateUtils.isValidDateRange(startDate.value, endDate.value)) {
@@ -321,11 +321,11 @@ async function fetchAll() {
     return
   }
   
-  console.log('📅 日期范围验证通过，开始加载数据...')
+  // console.log('📅 日期范围验证通过，开始加载数据...')
   loading.value = true
   
   try {
-    console.log('🧹 开始清除缓存...')
+    // console.log('🧹 开始清除缓存...')
     // 清除所有缓存，强制重新获取数据
     unifiedCacheService.clearCache()
     
@@ -339,7 +339,7 @@ async function fetchAll() {
     diaryCache.value.clear()
     ;(window as any).__diaryCache = diaryCache.value
     
-    console.log('🌐 开始请求天气数据...')
+    // console.log('🌐 开始请求天气数据...')
     // 使用统一缓存服务，强制重新获取天气和日记数据
     const { weatherData } = await unifiedCacheService.initializeData(
       startDate.value,
@@ -349,7 +349,7 @@ async function fetchAll() {
       true // forceRefresh = true，强制刷新
     )
     
-    console.log('✅ 天气数据获取成功，数据量:', weatherData.length)
+    // console.log('✅ 天气数据获取成功，数据量:', weatherData.length)
     
     // 按日期倒序排列显示
     weatherList.value = [...weatherData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -736,12 +736,12 @@ function handleOnline() {
 }
 
 function handleOffline() {
-  console.log('网络已断开')
+  // console.log('网络已断开')
   // 可以在这里显示离线提示
 }
 
 function handleAppInstalled() {
-  console.log('PWA应用已安装')
+  // console.log('PWA应用已安装')
   // 可以在这里显示安装成功提示或进行其他操作
 }
 
