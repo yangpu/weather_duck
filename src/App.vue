@@ -800,30 +800,10 @@ onUnmounted(() => {
 </script>
 
 <style>
-/* 全局样式：固定滚动条宽度，防止对话框显示时页面闪动 */
 html {
-  /* 计算滚动条宽度并预留空间 */
-  --scrollbar-width: calc(100vw - 100%);
+  scrollbar-gutter: stable;
 }
 
-body {
-  /* 始终保持右侧padding，补偿滚动条宽度 */
-  padding-right: var(--scrollbar-width);
-  /* 当TDesign对话框隐藏滚动条时，保持页面宽度不变 */
-  box-sizing: border-box;
-}
-
-/* 当body设置overflow:hidden时（对话框显示），保持padding */
-body[style*="overflow: hidden"] {
-  padding-right: var(--scrollbar-width) !important;
-}
-
-/* 确保对话框遮罩层不受padding影响 */
-.t-dialog__mask,
-.t-overlay {
-  margin-right: calc(-1 * var(--scrollbar-width));
-  width: calc(100% + var(--scrollbar-width));
-}
 </style>
 
 <style scoped>
