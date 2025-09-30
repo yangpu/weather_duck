@@ -73,8 +73,8 @@ const hasLoadedFuture3Days = ref(false)
 const startDate = ref('2025-09-01')
 const endDate = ref('2025-09-08')
 
-function handleLoadNext(startDateStr: string, endDateStr: string, isForecast: boolean) {
-  console.log('加载后7天数据:', { startDateStr, endDateStr, isForecast })
+function handleLoadNext(_startDateStr: string, endDateStr: string, _isForecast: boolean) {
+
   
   // 模拟加载过程
   loadingNext.value = true
@@ -82,12 +82,12 @@ function handleLoadNext(startDateStr: string, endDateStr: string, isForecast: bo
     loadingNext.value = false
     // 更新结束日期
     endDate.value = endDateStr
-    console.log('后7天数据加载完成')
+
   }, 2000)
 }
 
-function handleLoadPrevious(startDateStr: string, endDateStr: string) {
-  console.log('加载前7天数据:', { startDateStr, endDateStr })
+function handleLoadPrevious(startDateStr: string, _endDateStr: string) {
+
   
   // 模拟加载过程
   loadingPrevious.value = true
@@ -95,7 +95,7 @@ function handleLoadPrevious(startDateStr: string, endDateStr: string) {
     loadingPrevious.value = false
     // 更新开始日期
     startDate.value = startDateStr
-    console.log('前7天数据加载完成')
+
   }, 2000)
 }
 

@@ -59,7 +59,7 @@ function initializeDateRange() {
 async function loadWeatherData() {
   loading.value = true
   try {
-    console.log(`🌤️ 加载天气数据: ${startDate.value} 到 ${endDate.value}`)
+
     
     // 使用增强的天气API，确保返回完整的日期范围
     const data = await WeatherApiService.getEnhancedWeatherData(
@@ -70,12 +70,12 @@ async function loadWeatherData() {
     )
     
     weatherData.value = data
-    console.log(`✅ 成功加载 ${data.length} 天的天气数据`)
+
     
     // 统计占位数据
     const placeholderCount = data.filter(w => w.isPlaceholder).length
     if (placeholderCount > 0) {
-      console.log(`📊 其中 ${placeholderCount} 天使用了占位数据`)
+
     }
     
   } catch (error) {
@@ -158,8 +158,8 @@ function openDiary(weather: WeatherData) {
 }
 
 // 日记保存回调
-function onDiarySaved(date: string, _content: string) {
-  console.log(`📝 日记已保存: ${date}`)
+function onDiarySaved(_date: string, _content: string) {
+
   // 可以在这里更新UI或触发其他操作
 }
 

@@ -6,7 +6,7 @@ import { supabase } from '../config/supabase'
  */
 export async function initializeSupabase() {
   try {
-    // console.log('检查Supabase配置...')
+
     
     // 检查环境变量
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -22,7 +22,7 @@ export async function initializeSupabase() {
       return false
     }
     
-    // console.log('✅ Supabase配置检查完成')
+
     return true
   } catch (error) {
     console.warn('Supabase配置检查失败，将使用本地存储模式:', error)

@@ -95,8 +95,8 @@ function showInstallButton(deferredPrompt: BeforeInstallPromptEvent): void {
 export function installPWA(deferredPrompt: BeforeInstallPromptEvent | null): void {
   if (deferredPrompt) {
     deferredPrompt.prompt();
-    deferredPrompt.userChoice.then((choiceResult) => {
-      console.log('用户选择:', choiceResult.outcome);
+    deferredPrompt.userChoice.then((_choiceResult) => {
+
       deferredPrompt = null;
     });
   }

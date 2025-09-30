@@ -10,7 +10,7 @@
       title="天气小鸭 · 暑假天气日历"
       :location="headerProvince || headerCity ? `${headerCity}${headerProvince && headerCity ? ' · ' : ''}${headerProvince}` : ''"
       :scroll-threshold="100"
-      @refresh="fetchAll"
+      @refresh="handleFetchAll"
       @settings="showAbout"
       class="no-print"
     >
@@ -25,7 +25,7 @@
           @citySelected="onCitySelected"
           @useMyLocation="useMyLocation"
           @dateRangeChange="onDateRangeChange"
-          @fetchAll="fetchAll"
+          @fetchAll="handleFetchAll"
           @printPage="printPage"
         />
       </template>
@@ -141,7 +141,8 @@ import { WeatherApiService } from './services/weatherApi'
 
 import { weatherService } from './services/weatherService'
 import { diaryService } from './services/diaryService'
-import { unifiedCacheService } from './services/unifiedCacheService'
+import { optimizedUnifiedCacheService } from './services/optimizedUnifiedCacheService'
+import { dateRangeManager } from './services/dateRangeManager'
 import { globalDataManager } from './services/globalDataManager'
 import type { WeatherData } from './types/weather'
 
@@ -252,6 +253,13 @@ function onDateRangeChange(val: [Date, Date] | [string, string]) {
   const e = typeof end === 'string' ? end : end.toISOString().slice(0, 10)
   startDate.value = s
   endDate.value = e
+  
+  // 更新全局日期范围管理器
+  dateRangeManager.setDateRange(s, e)
+}
+
+function handleFetchAll(forceRefresh: boolean) {
+  fetchAll(forceRefresh)
 }
 
 
@@ -264,7 +272,7 @@ async function onCitySelected(val: string) {
   selectedCity.value = val
   displayAddress.value = target.label
   isDefaultLocation.value = false
-  await fetchAll()
+  await fetchAll(false) // 初始加载不强制刷新，优先使用缓存
 }
 
 async function useMyLocation() {
@@ -283,7 +291,7 @@ async function useMyLocation() {
     // 定位成功提示
     MessagePlugin.success('定位成功！')
     
-    await fetchAll()
+    await fetchAll(false) // 定位成功后不强制刷新，优先使用缓存
   } catch (e: any) {
     console.error('定位失败:', e)
     
@@ -301,19 +309,23 @@ async function useMyLocation() {
     // 显示使用默认位置的提示
     MessagePlugin.warning('已使用默认位置：深圳市')
     
-    await fetchAll()
+    await fetchAll(false) // 使用默认位置后不强制刷新，优先使用缓存
   } finally {
     locating.value = false
   }
 }
 
-async function fetchAll() {
-  // console.log('🔄 fetchAll 被调用', {
-  //   startDate: startDate.value,
-  //   endDate: endDate.value,
-  //   latitude: latitude.value,
-  //   longitude: longitude.value
-  // })
+async function fetchAll(forceRefresh: boolean = false) {
+  // 防止重复调用
+  if (loading.value && !forceRefresh) {
+
+    return
+  }
+  
+  // 更新全局日期范围管理器
+  dateRangeManager.setDateRange(startDate.value, endDate.value)
+  
+
   
   errorMessage.value = ''
   if (!DateUtils.isValidDateRange(startDate.value, endDate.value)) {
@@ -321,40 +333,162 @@ async function fetchAll() {
     return
   }
   
-  // console.log('📅 日期范围验证通过，开始加载数据...')
-  loading.value = true
+
   
+  // 缓存优先策略：先尝试立即显示缓存数据
+  if (!forceRefresh) {
+
+    try {
+      // 先从缓存获取数据，立即显示
+      const cachedResult = await optimizedUnifiedCacheService.getCachedDataImmediate(
+        startDate.value,
+        endDate.value
+      )
+      
+      if (cachedResult && cachedResult.weatherData.length > 0) {
+
+        
+        // 立即更新UI，不显示loading
+        weatherList.value = [...cachedResult.weatherData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        
+        // 更新日记缓存
+        cachedResult.diariesData.forEach(diary => {
+          diaryCache.value.set(diary.date, diary)
+        })
+        ;(window as any).__diaryCache = diaryCache.value
+        
+        // 标记数据已加载，避免显示loading
+        loading.value = false
+        
+        // 只有在线时才进行后台更新
+        if (navigator.onLine) {
+
+          optimizedUnifiedCacheService.initializeDataOptimized(
+            startDate.value,
+            endDate.value,
+            latitude.value,
+            longitude.value,
+            false // 后台更新不强制刷新
+          ).then(backgroundResult => {
+
+            // 静默更新UI数据
+            weatherList.value = [...backgroundResult.weatherData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            backgroundResult.diariesData.forEach(diary => {
+              diaryCache.value.set(diary.date, diary)
+            })
+          }).catch(error => {
+            console.warn('⚠️ 后台更新失败:', error)
+          })
+        } else {
+
+        }
+        
+        return // 缓存数据已显示，直接返回
+      }
+    } catch (cacheError) {
+      console.warn('⚠️ 缓存数据获取失败，继续正常加载流程:', cacheError)
+    }
+  }
+
+  // 如果没有缓存数据或强制刷新，显示loading并正常加载
+  loading.value = true
+
   try {
-    // console.log('🧹 开始清除缓存...')
-    // 清除所有缓存，强制重新获取数据
-    unifiedCacheService.clearCache()
-    
-    // 清除全局数据管理器缓存
-    const globalManager = (window as any).__globalDataManager
-    if (globalManager) {
-      globalManager.clearCache()
+    // 只有在强制刷新时才清除缓存
+    if (forceRefresh) {
+
+      // 清除所有缓存，强制重新获取数据
+      optimizedUnifiedCacheService.clearCache()
+      
+      // 清除全局数据管理器缓存
+      const globalManager = (window as any).__globalDataManager
+      if (globalManager) {
+        globalManager.clearCache()
+      }
+      
+      // 清除本地日记缓存
+      diaryCache.value.clear()
+      ;(window as any).__diaryCache = diaryCache.value
     }
     
-    // 清除本地日记缓存
-    diaryCache.value.clear()
-    ;(window as any).__diaryCache = diaryCache.value
-    
-    // console.log('🌐 开始请求天气数据...')
-    // 使用统一缓存服务，强制重新获取天气和日记数据
-    const { weatherData } = await unifiedCacheService.initializeData(
+
+    // 使用统一缓存服务，支持缓存优先策略和请求去重
+    const result = await optimizedUnifiedCacheService.initializeDataOptimized(
       startDate.value,
       endDate.value,
       latitude.value,
       longitude.value,
-      true // forceRefresh = true，强制刷新
+      forceRefresh // 传递forceRefresh参数
     )
     
-    // console.log('✅ 天气数据获取成功，数据量:', weatherData.length)
+
+    
+    // 确保数据被正确缓存到离线服务
+    try {
+      if ((window as any).__offlineDataService) {
+        await (window as any).__offlineDataService.cacheWeatherData(result.weatherData)
+        await (window as any).__offlineDataService.cacheDiaryData(result.diariesData)
+
+        
+        // 验证缓存是否成功
+        ;(window as any).__offlineDataService.getCacheStats()
+
+        
+        // 额外验证：检查localStorage中的数据
+        Object.keys(localStorage).filter(key => key.startsWith('weather_'))
+        Object.keys(localStorage).filter(key => key.startsWith('diary_'))
+
+        
+      } else {
+        console.warn('⚠️ 离线数据服务不可用，直接缓存到localStorage')
+        
+        // 兜底：直接缓存到localStorage
+        result.weatherData.forEach((weather: any) => {
+          if (weather && weather.date && !weather.isPlaceholder) {
+            const key = `weather_${weather.date}`
+            localStorage.setItem(key, JSON.stringify(weather))
+          }
+        })
+        
+        result.diariesData.forEach((diary: any) => {
+          if (diary && diary.date) {
+            const key = `diary_${diary.date}`
+            localStorage.setItem(key, JSON.stringify(diary))
+          }
+        })
+        
+
+      }
+    } catch (error) {
+      console.error('❌ 缓存数据时出错:', error)
+      
+      // 最后的兜底：直接存储到localStorage
+      try {
+        result.weatherData.forEach((weather: any) => {
+          if (weather && weather.date && !weather.isPlaceholder) {
+            const key = `weather_${weather.date}`
+            localStorage.setItem(key, JSON.stringify(weather))
+          }
+        })
+        
+        result.diariesData.forEach((diary: any) => {
+          if (diary && diary.date) {
+            const key = `diary_${diary.date}`
+            localStorage.setItem(key, JSON.stringify(diary))
+          }
+        })
+        
+
+      } catch (fallbackError) {
+        console.error('❌ 兜底缓存也失败:', fallbackError)
+      }
+    }
     
     // 按日期倒序排列显示
-    weatherList.value = [...weatherData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    weatherList.value = [...result.weatherData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
     // 确保全局数据管理器也被正确初始化
+    const globalManager = (window as any).__globalDataManager
     if (globalManager) {
       await globalManager.initialize(
         startDate.value,
@@ -369,12 +503,8 @@ async function fetchAll() {
       window.markLoaded('weather');
     }
 
-    // console.log('✅ App: 数据加载完成', {
-    //   weatherCount: weatherData.length,
-    //   dateRange: `${startDate.value} ~ ${endDate.value}`
-    // })
-
   } catch (e: any) {
+    console.error('❌ fetchAll 执行失败:', e)
     errorMessage.value = e?.message || '获取天气失败'
   } finally {
     loading.value = false
@@ -394,7 +524,7 @@ const diaryCache = ref<Map<string, any>>(new Map())
 // 监听 weatherList 变化，同步更新全局变量
 watch(weatherList, (newWeatherList) => {
   ;(window as any).__weatherList = newWeatherList
-  // console.log('🔄 全局天气列表已更新，长度:', newWeatherList.length)
+
 }, { immediate: true, deep: true })
 
 // 监听对话框状态变化，处理滚动条宽度
@@ -428,14 +558,14 @@ async function preloadDiariesOverview(startDate: string, endDate: string) {
 
 // 处理天气卡片点击 - 优化：使用统一缓存服务
 function handleWeatherCardClick(weather: WeatherData) {
-  // console.log('🎯 卡片点击:', weather.date)
+
   
   // 先设置选中的天气数据
   selectedWeather.value = weather
   
   // 从统一缓存服务获取日记数据
-  const diary = unifiedCacheService.getDiaryData(weather.date)
-  // console.log('📦 从统一缓存获取日记:', diary)
+  const diary = optimizedUnifiedCacheService.getDiaryData(weather.date)
+
   
   // 同时更新本地缓存（兼容性）
   if (diary) {
@@ -453,10 +583,10 @@ function handleWeatherCardClick(weather: WeatherData) {
   )
   
   if (hasContent) {
-    // console.log('✅ 有日记内容，显示查看页面')
+
     diaryViewVisible.value = true
   } else {
-    // console.log('📝 无日记内容，显示编辑页面')
+
     diaryEditVisible.value = true
   }
 }
@@ -481,7 +611,7 @@ function handleDateChange(date: string) {
 function handleEditDateChange(date: string) {
   const weather = weatherList.value.find(w => w.date === date)
   if (weather) {
-    // console.log('🔄 编辑组件日期变化:', date)
+
     selectedWeather.value = weather
     // 保持编辑对话框打开状态，只更新数据
   }
@@ -489,7 +619,7 @@ function handleEditDateChange(date: string) {
 
 // 处理日记保存
 async function handleDiarySaved(date: string, _content: string) {
-  // console.log(`日记已保存: ${date}`, content ? '有内容' : '已删除')
+
   
   // 直接从缓存获取数据，避免重新请求
   try {
@@ -511,7 +641,7 @@ async function handleDiarySaved(date: string, _content: string) {
       diaryCache.value.delete(date)
     }
     
-    // console.log(`✅ 日记缓存已更新: ${date}`)
+
   } catch (error) {
     console.warn('更新缓存失败:', error)
   }
@@ -530,25 +660,96 @@ async function handleLoadNext(startDateStr: string, endDateStr: string, isForeca
 
   loadingNext.value = true
   try {
-    // console.log(`🔄 开始加载后7天数据: ${startDateStr} 至 ${endDateStr} (预测: ${isForecast})`)
+    // console.log(`🔄 开始加载后7天数据: ${startDateStr} 到 ${endDateStr}`)
     
-    // 获取新的天气数据
-    const newWeatherData = await weatherService.getWeatherForDateRange(
-      latitude.value,
-      longitude.value,
-      startDateStr,
-      endDateStr
-    )
+    // 生成请求日期范围内的所有日期，用于缓存管理
+    const requestDates = DateUtils.getDatesBetween(startDateStr, endDateStr)
+    // console.log(`📅 请求日期范围包含的所有日期:`, requestDates)
+    
+    // 并行获取天气数据和日记数据
+    const [newWeatherData, newDiariesData] = await Promise.all([
+      weatherService.getWeatherForDateRange(
+        latitude.value,
+        longitude.value,
+        startDateStr,
+        endDateStr
+      ),
+      // 获取对应日期范围的日记数据，强制刷新以确保发起网络请求
+      diaryService.getDiariesByDateRange(startDateStr, endDateStr, true)
+    ])
+    
+    // console.log(`📦 加载到的天气数据:`, newWeatherData?.length || 0, '条')
+    // console.log(`📔 加载到的日记数据:`, newDiariesData?.length || 0, '条')
     
     if (newWeatherData && newWeatherData.length > 0) {
-      // 将新数据添加到现有数据中，并按日期倒序排列
-      const allData = [...weatherList.value, ...newWeatherData]
-      weatherList.value = allData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      // 按日期索引合并天气数据，避免重复
+      const existingWeatherMap = new Map(weatherList.value.map(w => [w.date, w]))
+      newWeatherData.forEach(weather => {
+        if (weather && weather.date) {
+          existingWeatherMap.set(weather.date, weather)
+        }
+      })
+      
+      // 按日期倒序排列显示
+      weatherList.value = Array.from(existingWeatherMap.values())
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      
+      // 按日期索引增量更新日记缓存 - 保留原有缓存数据
+      // console.log(`📝 更新前缓存中的日记数量:`, diaryCache.value.size)
+      // console.log(`📝 更新前缓存中的所有日记日期:`, Array.from(diaryCache.value.keys()).sort())
+      
+      // 对于请求范围内的每个日期，都要处理缓存更新
+      requestDates.forEach(date => {
+        // 查找该日期对应的日记数据
+        const diaryForDate = newDiariesData?.find(d => d && d.date === date)
+        
+        if (diaryForDate) {
+          // 找到了该日期的日记数据，更新缓存
+          diaryCache.value.set(date, diaryForDate)
+          optimizedUnifiedCacheService.setDiaryData(date, diaryForDate)
+          // console.log(`📝 更新日记缓存 [${date}]:`, diaryForDate.content ? '有内容' : '空内容')
+        } else {
+          // 该日期没有返回日记数据，设置为空对象表示"已请求但无内容"
+          // 这样可以区分"未请求"和"已请求但无内容"的状态
+          const emptyDiary = { 
+            date, 
+            content: '', 
+            images: [], 
+            videos: [], 
+            mood: null,
+            weather_data: null
+          }
+          diaryCache.value.set(date, emptyDiary)
+          optimizedUnifiedCacheService.setDiaryData(date, emptyDiary)
+          // console.log(`📝 设置空日记缓存 [${date}]: 已请求但无内容`)
+        }
+      })
+      
+      // 更新全局缓存引用
+      ;(window as any).__diaryCache = diaryCache.value
+      
+      // console.log(`📝 已更新日记缓存，当前缓存中的日记数量:`, diaryCache.value.size)
+      // console.log(`📝 缓存中的所有日记日期:`, Array.from(diaryCache.value.keys()).sort())
+      
+      // 通知 WeatherCard 组件日记数据已更新
+      window.dispatchEvent(new CustomEvent('diaries:loaded', { 
+        detail: { startDate: startDateStr, endDate: endDateStr, diaries: newDiariesData || [] } 
+      }))
       
       // 更新全局数据管理器
       const globalManager = (window as any).__globalDataManager
       if (globalManager) {
         globalManager.dataCache.set('weather', weatherList.value)
+        
+        // 按日期索引更新全局数据管理器中的日记缓存
+        const existingDiaries = globalManager.dataCache.get('diaries') || new Map()
+        requestDates.forEach(date => {
+          const diaryForDate = diaryCache.value.get(date)
+          if (diaryForDate) {
+            existingDiaries.set(date, diaryForDate)
+          }
+        })
+        globalManager.dataCache.set('diaries', existingDiaries)
       }
       
       // 更新结束日期
@@ -564,41 +765,8 @@ async function handleLoadNext(startDateStr: string, endDateStr: string, isForeca
         hasLoadedFuture3Days.value = true
       }
       
-
-      // console.log(`✅ 成功加载后7天${dataType}数据: ${newWeatherData.length} 条`)
-      
-      // 加载对应时间段的日记数据
-      try {
-        // console.log(`🔄 开始加载日记数据: ${startDateStr} 至 ${endDateStr}`)
-        const newDiaries = await diaryService.getDiariesByDateRange(startDateStr, endDateStr)
-        
-        // 将新加载的日记数据更新到统一缓存服务中
-        if (newDiaries && newDiaries.length > 0) {
-          // console.log(`📝 准备缓存日记数据:`, newDiaries.map(d => ({ date: d.date, hasContent: !!d.content, hasMood: !!d.mood })))
-          newDiaries.forEach(diary => {
-            if (diary.date) {
-              unifiedCacheService.setDiaryData(diary.date, diary)
-              // console.log(`📝 已缓存日记: ${diary.date}`)
-            }
-          })
-          // console.log(`✅ 成功加载并缓存日记数据: ${newDiaries.length} 条`)
-          
-          // 验证缓存是否成功
-          // const _cachedDiaries = unifiedCacheService.getDiaryData()
-          // console.log(`📝 缓存验证 - 总日记数:`, _cachedDiaries.length, '日期列表:', _cachedDiaries.map(d => d.date))
-          
-          // 触发事件通知WeatherCard组件更新
-          window.dispatchEvent(new CustomEvent('diaries:data:ready', {
-            detail: { startDate: startDateStr, endDate: endDateStr, diaries: newDiaries }
-          }))
-          // console.log(`📡 已触发 diaries:data:ready 事件`)
-        } else {
-          // console.log(`✅ 日记数据加载完成，但该时间段无日记数据`)
-        }
-      } catch (diaryError) {
-        console.warn('⚠️ 加载日记数据失败:', diaryError)
-        // 日记加载失败不影响天气数据显示
-      }
+      // 更新全局日期范围（扩展范围）
+      dateRangeManager.setDateRange(startDate.value, endDate.value)
       
       // 等待DOM更新完成后再滚动
       await nextTick()
@@ -621,65 +789,101 @@ async function handleLoadPrevious(startDateStr: string, endDateStr: string) {
 
   loadingPrevious.value = true
   try {
-    // console.log(`🔄 开始加载前7天数据: ${startDateStr} 至 ${endDateStr}`)
+    // console.log(`🔄 开始加载前7天数据: ${startDateStr} 到 ${endDateStr}`)
     
-    // 获取新的天气数据
-    const newWeatherData = await weatherService.getWeatherForDateRange(
-      latitude.value,
-      longitude.value,
-      startDateStr,
-      endDateStr
-    )
+    // 生成请求日期范围内的所有日期，用于缓存管理
+    const requestDates = DateUtils.getDatesBetween(startDateStr, endDateStr)
+    // console.log(`📅 请求日期范围包含的所有日期:`, requestDates)
+    
+    // 并行获取天气数据和日记数据
+    const [newWeatherData, newDiariesData] = await Promise.all([
+      weatherService.getWeatherForDateRange(
+        latitude.value,
+        longitude.value,
+        startDateStr,
+        endDateStr
+      ),
+      // 获取对应日期范围的日记数据，强制刷新以确保发起网络请求
+      diaryService.getDiariesByDateRange(startDateStr, endDateStr, true)
+    ])
+    
+    // console.log(`📦 加载到的天气数据:`, newWeatherData?.length || 0, '条')
+    // console.log(`📔 加载到的日记数据:`, newDiariesData?.length || 0, '条')
     
     if (newWeatherData && newWeatherData.length > 0) {
-      // 将新数据添加到现有数据中，并按日期倒序排列
-      const allData = [...weatherList.value, ...newWeatherData]
-      weatherList.value = allData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      // 按日期索引合并天气数据，避免重复
+      const existingWeatherMap = new Map(weatherList.value.map(w => [w.date, w]))
+      newWeatherData.forEach(weather => {
+        if (weather && weather.date) {
+          existingWeatherMap.set(weather.date, weather)
+        }
+      })
+      
+      // 按日期倒序排列显示
+      weatherList.value = Array.from(existingWeatherMap.values())
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      
+      // 按日期索引增量更新日记缓存
+      // 对于请求范围内的每个日期，都要处理缓存更新
+      requestDates.forEach(date => {
+        // 查找该日期对应的日记数据
+        const diaryForDate = newDiariesData?.find(d => d && d.date === date)
+        
+        if (diaryForDate) {
+          // 找到了该日期的日记数据，更新缓存
+          diaryCache.value.set(date, diaryForDate)
+          optimizedUnifiedCacheService.setDiaryData(date, diaryForDate)
+          // console.log(`📝 更新日记缓存 [${date}]:`, diaryForDate.content ? '有内容' : '空内容')
+        } else {
+          // 该日期没有返回日记数据，设置为空对象表示"已请求但无内容"
+          // 这样可以区分"未请求"和"已请求但无内容"的状态
+          const emptyDiary = { 
+            date, 
+            content: '', 
+            images: [], 
+            videos: [], 
+            mood: null,
+            weather_data: null
+          }
+          diaryCache.value.set(date, emptyDiary)
+          optimizedUnifiedCacheService.setDiaryData(date, emptyDiary)
+          // console.log(`📝 设置空日记缓存 [${date}]: 已请求但无内容`)
+        }
+      })
+      
+      // 更新全局缓存引用
+      ;(window as any).__diaryCache = diaryCache.value
+      
+      // console.log(`📝 已更新日记缓存，当前缓存中的日记数量:`, diaryCache.value.size)
+      // console.log(`📝 缓存中的所有日记日期:`, Array.from(diaryCache.value.keys()).sort())
+      
+      // 通知 WeatherCard 组件日记数据已更新
+      window.dispatchEvent(new CustomEvent('diaries:loaded', { 
+        detail: { startDate: startDateStr, endDate: endDateStr, diaries: newDiariesData || [] } 
+      }))
       
       // 更新全局数据管理器
       const globalManager = (window as any).__globalDataManager
       if (globalManager) {
         globalManager.dataCache.set('weather', weatherList.value)
+        
+        // 按日期索引更新全局数据管理器中的日记缓存
+        const existingDiaries = globalManager.dataCache.get('diaries') || new Map()
+        requestDates.forEach(date => {
+          const diaryForDate = diaryCache.value.get(date)
+          if (diaryForDate) {
+            existingDiaries.set(date, diaryForDate)
+          }
+        })
+        globalManager.dataCache.set('diaries', existingDiaries)
       }
       
       // 更新开始日期
       startDate.value = startDateStr
       dateRangeValue.value = [startDate.value, endDate.value]
       
-      // console.log(`✅ 成功加载前7天历史数据: ${newWeatherData.length} 条`)
-      
-      // 加载对应时间段的日记数据
-      try {
-        // console.log(`🔄 开始加载日记数据: ${startDateStr} 至 ${endDateStr}`)
-        const newDiaries = await diaryService.getDiariesByDateRange(startDateStr, endDateStr)
-        
-        // 将新加载的日记数据更新到统一缓存服务中
-        if (newDiaries && newDiaries.length > 0) {
-          // console.log(`📝 准备缓存日记数据:`, newDiaries.map(d => ({ date: d.date, hasContent: !!d.content, hasMood: !!d.mood })))
-          newDiaries.forEach(diary => {
-            if (diary.date) {
-              unifiedCacheService.setDiaryData(diary.date, diary)
-              // console.log(`📝 已缓存日记: ${diary.date}`)
-            }
-          })
-          // console.log(`✅ 成功加载并缓存日记数据: ${newDiaries.length} 条`)
-          
-          // 验证缓存是否成功
-          // const _cachedDiaries = unifiedCacheService.getDiaryData()
-          // console.log(`📝 缓存验证 - 总日记数:`, _cachedDiaries.length, '日期列表:', _cachedDiaries.map(d => d.date))
-          
-          // 触发事件通知WeatherCard组件更新
-          window.dispatchEvent(new CustomEvent('diaries:data:ready', {
-            detail: { startDate: startDateStr, endDate: endDateStr, diaries: newDiaries }
-          }))
-          // console.log(`📡 已触发 diaries:data:ready 事件`)
-        } else {
-          // console.log(`✅ 日记数据加载完成，但该时间段无日记数据`)
-        }
-      } catch (diaryError) {
-        console.warn('⚠️ 加载日记数据失败:', diaryError)
-        // 日记加载失败不影响天气数据显示
-      }
+      // 更新全局日期范围（扩展范围）
+      dateRangeManager.setDateRange(startDate.value, endDate.value)
       
       // 等待DOM更新完成后再滚动
       await nextTick()
@@ -721,7 +925,7 @@ async function scrollToNewCard(targetDate: string) {
         inline: 'nearest'
       })
       
-      // console.log(`📍 自动滚动到日期: ${targetDate}`)
+
     } else {
       console.warn(`⚠️ 未找到日期为 ${targetDate} 的卡片`)
     }
@@ -736,12 +940,12 @@ function handleOnline() {
 }
 
 function handleOffline() {
-  // console.log('网络已断开')
+
   // 可以在这里显示离线提示
 }
 
 function handleAppInstalled() {
-  // console.log('PWA应用已安装')
+
   // 可以在这里显示安装成功提示或进行其他操作
 }
 
@@ -758,7 +962,10 @@ onMounted(async () => {
   ;(window as any).__globalDataManager = globalDataManager
   
   // 暴露统一缓存服务到全局
-  ;(window as any).__unifiedCacheService = unifiedCacheService
+  ;(window as any).__unifiedCacheService = optimizedUnifiedCacheService
+  
+  // 初始化日期范围管理器
+  dateRangeManager.initialize(startDate.value, endDate.value)
   
   try {
     const loc = await WeatherApiService.getCurrentLocation()
@@ -784,9 +991,8 @@ onMounted(async () => {
     setSelectedToCurrentLocation(displayAddress.value)
   }
   
-
-  
-  await fetchAll()
+  // 只在初始化完成后调用一次 fetchAll
+  await fetchAll(false) // 初始加载不强制刷新，优先使用缓存
   
   // 标记日记数据已加载完成（初始化时）
   if (window.markLoaded) {

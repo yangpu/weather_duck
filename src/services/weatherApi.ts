@@ -36,6 +36,7 @@ export class WeatherApiService {
   ): Promise<T> {
     // 离线快速失败
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+
       throw new Error('网络不可用，请检查连接后重试')
     }
 
@@ -218,7 +219,7 @@ export class WeatherApiService {
       const daysFromToday = Math.ceil((maxRequestDate.getTime() - todayObj.getTime()) / (24 * 60 * 60 * 1000))
       // 需要包含今天，所以是daysFromToday + 1
       forecastDays = Math.min(Math.max(daysFromToday + 1, 1), 16)
-      // console.log(`最大请求日期 ${maxRequestDate.toISOString().slice(0, 10)} 距今天 ${today} 有 ${daysFromToday} 天，设置 forecast_days = ${forecastDays}`)
+
     }
     
     // 特别处理：如果请求的都是未来日期，确保forecast_days足够
@@ -227,7 +228,7 @@ export class WeatherApiService {
       const endDaysFromToday = Math.ceil((endDateObj.getTime() - todayObj.getTime()) / (24 * 60 * 60 * 1000))
       // 需要获取到结束日期，所以至少需要endDaysFromToday + 1天的数据
       forecastDays = Math.min(Math.max(endDaysFromToday + 1, startDaysFromToday + 1), 16)
-      // console.log(`请求未来日期范围 ${startDate} 到 ${endDate}，开始日期距今天 ${startDaysFromToday} 天，结束日期距今天 ${endDaysFromToday} 天，设置 forecast_days = ${forecastDays}`)
+
     }
 
     // 构建API参数 - 不能同时使用start_date/end_date和forecast_days/past_days
@@ -244,7 +245,7 @@ export class WeatherApiService {
     }
     params.forecast_days = forecastDays
 
-    // console.log(`Forecast API调用参数:`, params)
+
     const response = await this.makeApiRequest<WeatherApiResponse>(FORECAST_API_URL, params)
 
     const daily = response?.daily
@@ -252,13 +253,13 @@ export class WeatherApiService {
       throw new Error('预报数据格式异常')
     }
 
-    // console.log(`Forecast API返回日期: ${daily.time.join(', ')}，请求范围: ${startDate} 到 ${endDate}`)
+
 
     const result: WeatherData[] = []
     
     // 检查是否有请求范围内的数据
     const availableDatesInRange = daily.time.filter(date => date >= startDate && date <= endDate)
-    // console.log(`请求范围内的可用日期: ${availableDatesInRange.join(', ')}`)
+
     
     if (availableDatesInRange.length === 0) {
       console.warn(`警告: Forecast API没有返回请求范围 ${startDate} 到 ${endDate} 内的任何数据`)
@@ -268,7 +269,7 @@ export class WeatherApiService {
     daily.time.forEach((date, index) => {
       // 只处理在请求日期范围内的数据
       if (date < startDate || date > endDate) {
-        // console.log(`跳过日期 ${date}，不在请求范围内`)
+
         return
       }
 
@@ -288,7 +289,7 @@ export class WeatherApiService {
         return
       }
 
-      // console.log(`处理日期 ${date}，温度: ${tmin}°C - ${tmax}°C`)
+
 
       const info = weatherCodes[wcode] || { description: '未知', icon: '❓' }
       const windDirection = typeof windDirDeg === 'number' ? this.getWindDirection(windDirDeg) : '不详'
@@ -310,7 +311,7 @@ export class WeatherApiService {
       })
     })
 
-    // console.log(`Forecast API最终返回 ${result.length} 条有效数据`)
+
     return result
   }
 
@@ -321,7 +322,7 @@ export class WeatherApiService {
     startDate: string,
     endDate: string
   ): Promise<WeatherData[]> {
-    // console.log(`获取天气数据: ${startDate} 到 ${endDate}`)
+
     
     const archiveMaxDate = '2025-09-09' // Archive API的最大支持日期
     
@@ -334,14 +335,14 @@ export class WeatherApiService {
         // 只对archive支持的日期范围调用archive接口
         const archiveEndDate = endDate <= archiveMaxDate ? endDate : archiveMaxDate
         
-        // console.log(`调用Archive API获取 ${startDate} 到 ${archiveEndDate} 的数据`)
+
         const archiveResult = await this.getArchiveWeather(
           latitude, longitude, startDate, archiveEndDate
         )
         archiveData = archiveResult.data
         missingDates = archiveResult.missingDates
         
-        // console.log(`Archive数据获取完成，有效数据: ${archiveData.length}条，缺失日期: ${missingDates.length}个`)
+
       }
       
       // 2. 处理超出archive范围的日期（未来日期）
@@ -356,14 +357,14 @@ export class WeatherApiService {
           futureEndDate
         )
         
-        // console.log(`检测到未来日期范围: ${futureDateRange.join(', ')}，将通过Forecast API获取`)
+
         missingDates.push(...futureDateRange)
       }
       
       // 3. 如果有缺失日期，通过forecast接口补缺
       let forecastData: WeatherData[] = []
       if (missingDates.length > 0) {
-        // console.log(`开始补缺缺失日期: ${missingDates.join(', ')}`)
+
         
         // 将连续的缺失日期分组，减少API调用次数
         const dateRanges = this.groupConsecutiveDates(missingDates)
@@ -374,7 +375,7 @@ export class WeatherApiService {
               latitude, longitude, range.start, range.end
             )
             forecastData.push(...rangeData)
-            // console.log(`成功补缺日期范围 ${range.start} 到 ${range.end}，获得 ${rangeData.length} 条数据`)
+
           } catch (error) {
             console.warn(`补缺日期范围 ${range.start} 到 ${range.end} 失败:`, error)
           }
@@ -385,7 +386,7 @@ export class WeatherApiService {
       const allData = [...archiveData, ...forecastData]
       const completeData = this.generateCompleteWeatherData(startDate, endDate, allData)
       
-      // console.log(`最终数据生成完成，总计 ${completeData.length} 条记录`)
+
       return completeData
       
     } catch (error) {
@@ -582,8 +583,8 @@ export class WeatherApiService {
       }
 
       const success = (position: GeolocationPosition) => {
-        const { latitude, longitude, accuracy } = position.coords
-        console.log(`定位成功: ${latitude}, ${longitude}, 精度: ${accuracy}米`)
+        const { latitude, longitude } = position.coords
+
         
         // 检查坐标合理性（中国大致范围）
         if (latitude < 3 || latitude > 54 || longitude < 73 || longitude > 135) {

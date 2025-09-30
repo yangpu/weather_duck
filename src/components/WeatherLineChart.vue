@@ -7,7 +7,7 @@ import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
 import * as echarts from 'echarts'
 import type { ECharts as TECharts, EChartsOption, LineSeriesOption, BarSeriesOption } from 'echarts'
 import type { WeatherData } from '../types/weather'
-import { unifiedCacheService } from '../services/unifiedCacheService'
+import { optimizedUnifiedCacheService } from '../services/optimizedUnifiedCacheService'
 import { truncateText } from '../utils/textUtils'
 
 interface Props {
@@ -38,7 +38,7 @@ const diaryData = ref<Record<string, any>>({})
 function loadDiaryMoods() {
   try {
     // 优先从统一缓存服务获取数据
-    const diaries = unifiedCacheService.getDiaryData()
+    const diaries = optimizedUnifiedCacheService.getDiaryData()
     const moodMap: Record<string, string> = {}
     const dataMap: Record<string, any> = {}
     
@@ -53,8 +53,7 @@ function loadDiaryMoods() {
     diaryMoods.value = moodMap
     diaryData.value = dataMap
     
-    // console.log('📊 WeatherLineChart: 从统一缓存加载日记数据', {
-    //   diariesCount: diaries.length,
+
     //   moodsCount: Object.keys(moodMap).length
     // })
 

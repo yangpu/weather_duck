@@ -80,7 +80,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { WeatherData } from '../types/weather'
 import { DateUtils } from '../utils/dateUtils'
-import { unifiedCacheService } from '../services/unifiedCacheService'
+import { optimizedUnifiedCacheService } from '../services/optimizedUnifiedCacheService'
 import type { WeatherDiary } from '../config/supabase'
 import { truncateText } from '../utils/textUtils'
 
@@ -109,18 +109,16 @@ const diaryData = ref<WeatherDiary | null>(null)
 function loadDiary() {
   try {
     // 优化：优先从统一缓存服务获取数据
-    const diary = unifiedCacheService.getDiaryData(props.weather.date)
+    const diary = optimizedUnifiedCacheService.getDiaryData(props.weather.date)
     hasDiary.value = !!diary
     diaryData.value = Array.isArray(diary) ? diary[0] : diary
     
-    if (diary) {
-      // console.log(`📦 WeatherCard: 从统一缓存获取日记 ${props.weather.date}`, diary)
-    } else {
-      // console.log(`📦 WeatherCard: 日记不存在 ${props.weather.date}`)
-      // 调试：检查缓存中的所有日记数据
-      // const _allDiaries = unifiedCacheService.getDiaryData()
-      // console.log(`📦 WeatherCard: 缓存中的所有日记:`, _allDiaries.map(d => d.date))
-    }
+    // if (diary) {
+    //   console.log(`✅ WeatherCard: 找到日记 ${props.weather.date}:`, diary)
+    // } else {
+    //   console.log(`❌ WeatherCard: 日记不存在 ${props.weather.date}`)
+    //   console.log(`📦 WeatherCard: 缓存中的所有日记:`, Array.from((window as any).__diaryCache?.keys() || []))
+    // }
     
     return
   } catch (error) {

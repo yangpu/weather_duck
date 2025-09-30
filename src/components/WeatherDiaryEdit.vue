@@ -591,7 +591,7 @@ async function handleSave() {
         savedDiary = null
       } catch (error) {
         // 如果删除失败（可能是因为日记不存在），忽略错误
-        console.log('删除日记时未找到记录，可能已被删除')
+
         savedDiary = null
       }
     } else {
@@ -618,8 +618,8 @@ async function handleSave() {
     }
     
     // 更新统一缓存服务
-    const { unifiedCacheService } = await import('../services/unifiedCacheService')
-    unifiedCacheService.setDiaryData(props.weather.date, savedDiary)
+    const { optimizedUnifiedCacheService } = await import('../services/optimizedUnifiedCacheService')
+    optimizedUnifiedCacheService.setDiaryData(props.weather.date, savedDiary)
     
     // 更新全局变量缓存（兼容性）
     const diaryCache = (window as any).__diaryCache
@@ -685,8 +685,8 @@ async function handleDelete() {
         }
         
         // 更新统一缓存服务
-        const { unifiedCacheService } = await import('../services/unifiedCacheService')
-        unifiedCacheService.setDiaryData(props.weather.date, null)
+        const { optimizedUnifiedCacheService } = await import('../services/optimizedUnifiedCacheService')
+        optimizedUnifiedCacheService.setDiaryData(props.weather.date, null)
         
         // 更新全局变量缓存（兼容性）
         const diaryCache = (window as any).__diaryCache

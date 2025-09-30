@@ -27,8 +27,8 @@ interface DiaryUpdatedEvent extends CustomEvent {
 declare global {
   interface Window {
     __globalDataManager?: GlobalDataManager
-    __diaryCache?: Map<string, DiaryData>
-    __weatherList?: WeatherData[]
+    __diaryCache?: any
+    __weatherList?: any
   }
 
   interface WindowEventMap {

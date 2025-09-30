@@ -2,7 +2,7 @@
   <header class="app-header" :class="{ 'header-scrolled': isScrolled }">
     <div class="header-content">
       <!-- Header Left: Logo + Title -->
-      <div class="header-left" @click="$emit('settings')" title="关于天气小鸭">
+      <div class="header-left" @click="emit('settings')" title="关于天气小鸭">
         <div class="logo-container">
           <img src="/weather_duck_rj_logo.jpeg" alt="天气小鸭" class="logo" />
         </div>
@@ -19,10 +19,10 @@
       <div class="header-right" :class="{ 'header-right-hidden': shouldHideHeaderRight }">
         <slot name="header-actions">
           <!-- 默认操作按钮 -->
-          <button class="header-btn" @click="$emit('refresh')">
+          <button class="header-btn" @click="emit('refresh', true)">
             <i class="icon">🔄</i>
           </button>
-          <button class="header-btn" @click="$emit('settings')">
+          <button class="header-btn" @click="emit('settings')">
             <i class="icon">⚙️</i>
           </button>
         </slot>
@@ -44,8 +44,8 @@ const props = withDefaults(defineProps<Props>(), {
   scrollThreshold: 100
 })
 
-defineEmits<{
-  refresh: []
+const emit = defineEmits<{
+  refresh: [forceRefresh: boolean]
   settings: []
 }>()
 

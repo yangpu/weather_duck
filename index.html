@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="天气小鸭">
     <meta name="msapplication-TileColor" content="#4A90E2">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>天气小鸭 - 暑假天气日历</title>
   </head>
   <body>
@@ -125,26 +125,202 @@
     <!-- 预加载关键资源 -->
     <link rel="preload" href="/weather_duck.jpg" as="image">
     
-    <!-- 先执行Service Worker清理 -->
-    <script src="/cleanup-sw.js"></script>
-    
-    <!-- 加载状态管理脚本 -->
+    <!-- 增强的Service Worker和缓存管理 -->
     <script>
+      // 全局错误处理
+      window.addEventListener('error', function(e) {
+        console.error('全局错误:', e.error);
+      });
+
+      // 网络状态检测
+      let isOnline = navigator.onLine;
+      let networkType = 'unknown';
+      
+      // 检测网络类型（移动端）
+      if ('connection' in navigator) {
+        networkType = navigator.connection.effectiveType || 'unknown';
+      }
+      
+      // 离线状态下立即关闭过渡页面
+      if (!isOnline) {
+        setTimeout(() => {
+          hideLoadingScreen();
+        }, 500);
+      }
+
+      // Service Worker 注册和缓存管理
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', async () => {
+          try {
+            // 先清理旧的Service Worker
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (let registration of registrations) {
+              await registration.unregister();
+            }
+            
+            // 注册增强的Service Worker
+            const registration = await navigator.serviceWorker.register('/sw.js', {
+              scope: '/'
+            });
+            
+            // 监听Service Worker更新
+            registration.addEventListener('updatefound', () => {
+              // Service Worker 更新中
+            });
+            
+          } catch (error) {
+            console.error('Service Worker 注册失败:', error);
+          }
+        });
+      }
+
+      // 增强的数据缓存管理
+      class EnhancedDataCache {
+        constructor() {
+          this.dbName = 'WeatherDuckDB';
+          this.version = 1;
+          this.db = null;
+          this.init();
+        }
+
+        async init() {
+          try {
+            this.db = await this.openDB();
+          } catch (error) {
+            console.error('IndexedDB 初始化失败:', error);
+            // 降级到localStorage
+            this.useLocalStorage = true;
+          }
+        }
+
+        openDB() {
+          return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.version);
+            
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve(request.result);
+            
+            request.onupgradeneeded = (event) => {
+              const db = event.target.result;
+              
+              // 创建天气数据存储
+              if (!db.objectStoreNames.contains('weather')) {
+                const weatherStore = db.createObjectStore('weather', { keyPath: 'id' });
+                weatherStore.createIndex('date', 'date', { unique: false });
+              }
+              
+              // 创建日记数据存储
+              if (!db.objectStoreNames.contains('diary')) {
+                const diaryStore = db.createObjectStore('diary', { keyPath: 'id' });
+                diaryStore.createIndex('date', 'date', { unique: true });
+              }
+            };
+          });
+        }
+
+        async setWeatherData(date, data) {
+          if (this.useLocalStorage) {
+            localStorage.setItem(`weather_${date}`, JSON.stringify(data));
+            return;
+          }
+
+          try {
+            const transaction = this.db.transaction(['weather'], 'readwrite');
+            const store = transaction.objectStore('weather');
+            await store.put({ id: `weather_${date}`, date, data, timestamp: Date.now() });
+          } catch (error) {
+            console.error('缓存天气数据失败:', error);
+          }
+        }
+
+        async getWeatherData(date) {
+          if (this.useLocalStorage) {
+            const data = localStorage.getItem(`weather_${date}`);
+            return data ? JSON.parse(data) : null;
+          }
+
+          try {
+            const transaction = this.db.transaction(['weather'], 'readonly');
+            const store = transaction.objectStore('weather');
+            const result = await store.get(`weather_${date}`);
+            return result ? result.data : null;
+          } catch (error) {
+            console.error('获取缓存天气数据失败:', error);
+            return null;
+          }
+        }
+
+        async setDiaryData(date, data) {
+          if (this.useLocalStorage) {
+            localStorage.setItem(`diary_${date}`, JSON.stringify(data));
+            return;
+          }
+
+          try {
+            const transaction = this.db.transaction(['diary'], 'readwrite');
+            const store = transaction.objectStore('diary');
+            await store.put({ id: `diary_${date}`, date, data, timestamp: Date.now() });
+          } catch (error) {
+            console.error('缓存日记数据失败:', error);
+          }
+        }
+
+        async getDiaryData(date) {
+          if (this.useLocalStorage) {
+            const data = localStorage.getItem(`diary_${date}`);
+            return data ? JSON.parse(data) : null;
+          }
+
+          try {
+            const transaction = this.db.transaction(['diary'], 'readonly');
+            const store = transaction.objectStore('diary');
+            const result = await store.get(`diary_${date}`);
+            return result ? result.data : null;
+          } catch (error) {
+            console.error('获取缓存日记数据失败:', error);
+            return null;
+          }
+        }
+      }
+
+      // 全局缓存实例
+      window.enhancedCache = new EnhancedDataCache();
+
       // 跟踪加载状态
       let loadingStates = {
         app: false,
         weather: false,
-        diary: false
+        diary: false,
+        cache: false
       };
-      
+
+      let loadingTimeout;
+      let debugInfo = {
+        userAgent: navigator.userAgent,
+        isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent),
+        isSafari: /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent),
+        networkType: networkType,
+        isOnline: isOnline,
+        timestamp: new Date().toISOString()
+      };
+
       // 检查是否所有内容都已加载
       function checkAllLoaded() {
         const allLoaded = Object.values(loadingStates).every(state => state);
+        
+        // 离线模式优化：如果离线且app已加载，立即隐藏加载屏幕
+        if (!isOnline && loadingStates.app) {
+          clearTimeout(loadingTimeout);
+          hideLoadingScreen();
+          return;
+        }
+        
         if (allLoaded) {
+          clearTimeout(loadingTimeout);
           hideLoadingScreen();
         }
       }
-      
+
       // 隐藏加载屏幕
       function hideLoadingScreen() {
         const loadingScreen = document.getElementById('loading-screen');
@@ -155,24 +331,119 @@
           }, 500);
         }
       }
-      
+
       // 标记某个部分已加载完成
       window.markLoaded = function(component) {
         loadingStates[component] = true;
         checkAllLoaded();
       };
-      
+
       // 应用加载完成后的回调
       window.addEventListener('load', () => {
         loadingStates.app = true;
         checkAllLoaded();
       });
-      
-      // 最长等待时间（防止卡住）
-      setTimeout(() => {
+
+      // DOMContentLoaded 事件（更早触发）
+      document.addEventListener('DOMContentLoaded', () => {
+        loadingStates.cache = true;
+        checkAllLoaded();
+      });
+
+      // 网络状态变化监听
+      window.addEventListener('online', () => {
+        isOnline = true;
+      });
+
+      window.addEventListener('offline', () => {
+        isOnline = false;
+        // 网络断开时立即关闭过渡页面，但只有在app已加载时
+        if (loadingStates.app) {
+          hideLoadingScreen();
+        }
+      });
+
+      // 移动端特定的超时处理
+      const timeoutDuration = debugInfo.isIOS ? 15000 : 10000;
+      loadingTimeout = setTimeout(() => {
+        // 在移动端显示超时信息
+        if (debugInfo.isIOS || /Android/i.test(navigator.userAgent)) {
+          const timeoutDiv = document.createElement('div');
+          timeoutDiv.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 14px;
+            z-index: 10001;
+            max-width: 80%;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+          `;
+          timeoutDiv.innerHTML = `
+            <h3 style="margin: 0 0 10px 0; color: #e74c3c;">加载超时</h3>
+            <p style="margin: 0 0 10px 0;">应用加载时间过长，可能的原因：</p>
+            <ul style="text-align: left; margin: 0 0 15px 0; padding-left: 20px;">
+              <li>网络连接不稳定</li>
+              <li>服务器响应慢</li>
+              <li>移动端兼容性问题</li>
+            </ul>
+            <button onclick="window.location.reload()" style="
+              background: #3498db;
+              color: white;
+              border: none;
+              padding: 10px 20px;
+              border-radius: 5px;
+              cursor: pointer;
+              margin-right: 10px;
+            ">重新加载</button>
+            <button onclick="this.parentNode.remove()" style="
+              background: #95a5a6;
+              color: white;
+              border: none;
+              padding: 10px 20px;
+              border-radius: 5px;
+              cursor: pointer;
+            ">继续等待</button>
+          `;
+          document.body.appendChild(timeoutDiv);
+        }
+        
         hideLoadingScreen();
-      }, 10000);
+      }, timeoutDuration);
+
+      // 移动端触摸事件优化
+      if (debugInfo.isIOS) {
+        document.addEventListener('touchstart', function() {}, { passive: true });
+      }
+
+      // 移动端事件监听
+      if (debugInfo.isIOS || /Android/i.test(navigator.userAgent)) {
+        // 监听页面可见性变化
+        document.addEventListener('visibilitychange', () => {
+          // 页面可见性变化处理
+        });
+
+        // 监听内存警告（iOS Safari）
+        if (debugInfo.isIOS) {
+          window.addEventListener('pagehide', () => {
+            // iOS页面隐藏事件处理
+          });
+          
+          window.addEventListener('pageshow', (event) => {
+            // iOS页面显示事件处理
+          });
+        }
+      }
     </script>
+    
+
+    
+
     
     <!-- 然后加载主应用 -->
     <script type="module" src="/src/main.ts"></script>

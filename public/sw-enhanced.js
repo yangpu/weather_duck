@@ -13,7 +13,6 @@ const STATIC_CACHE_URLS = isDevelopment ? [
   '/manifest.json',
   '/favicon.svg',
   '/apple-touch-icon.svg',
-  '/icons/icon.svg',
   '/weather_duck.jpg'
 ] : [
   // 生产环境缓存完整资源
@@ -22,7 +21,6 @@ const STATIC_CACHE_URLS = isDevelopment ? [
   '/manifest.json',
   '/favicon.svg',
   '/apple-touch-icon.svg',
-  '/icons/icon.svg',
   '/weather_duck.jpg',
   '/src/main.ts'
 ];
@@ -85,19 +83,7 @@ self.addEventListener('fetch', (event) => {
       url.pathname.includes('?t=') ||
       url.pathname.includes('/node_modules/') ||
       url.pathname.includes('/__vite_ping') ||
-      url.searchParams.has('t') ||
-      url.pathname.includes('?import') ||
-      url.pathname.includes('?direct') ||
-      url.pathname.includes('?worker') ||
-      url.pathname.includes('?raw') ||
-      url.pathname.includes('?url') ||
-      url.pathname.includes('?v=') ||
-      url.searchParams.has('v') ||
-      url.pathname.endsWith('.ts') ||
-      url.pathname.endsWith('.tsx') ||
-      url.pathname.endsWith('.jsx') ||
-      url.pathname.endsWith('.vue') ||
-      url.port !== location.port) { // 跳过不同端口的请求
+      url.searchParams.has('t')) {
       return; // 不拦截，让浏览器直接处理
     }
   }
@@ -168,14 +154,12 @@ async function handleApiRequest(request) {
       // 成功时更新缓存
       //console.log('✅ 网络请求成功，更新缓存:', request.url);
 
-      // 只缓存 GET 请求，Cache API 不支持其他方法
-      if (request.method === 'GET') {
-        try {
-          await cache.put(request, networkResponse.clone());
-          //console.log('✅ 缓存更新成功:', request.url);
-        } catch (cacheError) {
-          console.warn('⚠️ 缓存更新失败:', request.url, cacheError);
-        }
+      // 确保响应可以被缓存
+      try {
+        await cache.put(request, networkResponse.clone());
+        //console.log('✅ 缓存更新成功:', request.url);
+      } catch (cacheError) {
+        console.warn('⚠️ 缓存更新失败:', request.url, cacheError);
       }
 
       return networkResponse;
@@ -356,9 +340,8 @@ async function handleStaticRequest(request) {
     const networkResponse = await fetch(request);
 
     if (networkResponse.ok) {
-      // 只缓存 GET 请求，且是支持的URL scheme，且不是开发环境的动态资源
-      if (request.method === 'GET' &&
-        (url.protocol === 'http:' || url.protocol === 'https:') &&
+      // 只缓存支持的URL scheme，且不是开发环境的动态资源
+      if ((url.protocol === 'http:' || url.protocol === 'https:') &&
         (!isDevelopment || !url.searchParams.has('t'))) {
         cache.put(request, networkResponse.clone());
       }
@@ -374,133 +357,7 @@ async function handleStaticRequest(request) {
       console.warn('静态资源请求失败:', request.url);
     }
 
-    // 在离线模式下，尝试提供基本的静态资源
-    if (url.pathname === '/icons/icon.svg') {
-      // 返回一个简单的 SVG 图标作为后备
-      return new Response(`
-        <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="256" cy="256" r="256" fill="#4A90E2"/>
-          <ellipse cx="256" cy="300" rx="80" ry="60" fill="#FFD700"/>
-          <circle cx="256" cy="200" r="50" fill="#FFD700"/>
-          <ellipse cx="280" cy="210" rx="20" ry="8" fill="#FF8C00"/>
-          <circle cx="245" cy="190" r="6" fill="#000"/>
-          <circle cx="247" cy="188" r="2" fill="#FFF"/>
-          <ellipse cx="220" cy="280" rx="25" ry="35" fill="#FFA500" transform="rotate(-20 220 280)"/>
-        </svg>
-      `, {
-        headers: { 'Content-Type': 'image/svg+xml' }
-      });
-    }
-
-    // 对于根路径或 index.html 请求，返回 Vue 应用的离线页面
-    if ((url.pathname === '/' || url.pathname === '/index.html') &&
-      request.headers.get('accept') && request.headers.get('accept').includes('text/html')) {
-      return new Response(`
-        <!DOCTYPE html>
-        <html lang="zh-CN">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>天气小鸭日记 - 离线模式</title>
-          <link rel="manifest" href="/manifest.json">
-          <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              color: white;
-              min-height: 100vh;
-              display: flex;
-              flex-direction: column;
-              justify-content: center;
-              align-items: center;
-              text-align: center;
-              padding: 20px;
-            }
-            .container {
-              background: rgba(255, 255, 255, 0.1);
-              backdrop-filter: blur(10px);
-              border-radius: 20px;
-              padding: 40px;
-              max-width: 500px;
-              border: 1px solid rgba(255, 255, 255, 0.2);
-            }
-            .icon { font-size: 4em; margin-bottom: 20px; }
-            h1 { font-size: 2.5em; margin-bottom: 15px; }
-            p { font-size: 1.1em; opacity: 0.9; margin-bottom: 20px; line-height: 1.6; }
-            .status {
-              background: rgba(255, 255, 255, 0.1);
-              padding: 15px;
-              border-radius: 10px;
-              margin: 20px 0;
-            }
-            button {
-              background: rgba(255, 255, 255, 0.2);
-              border: 1px solid rgba(255, 255, 255, 0.3);
-              color: white;
-              padding: 15px 30px;
-              border-radius: 10px;
-              cursor: pointer;
-              font-size: 16px;
-              margin: 10px;
-              transition: all 0.3s ease;
-            }
-            button:hover {
-              background: rgba(255, 255, 255, 0.3);
-              transform: translateY(-2px);
-            }
-            .dev-notice {
-              background: rgba(255, 193, 7, 0.2);
-              border: 1px solid rgba(255, 193, 7, 0.5);
-              padding: 15px;
-              border-radius: 10px;
-              margin-top: 20px;
-              font-size: 14px;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="icon">🦆</div>
-            <h1>天气小鸭日记</h1>
-            <p>当前处于离线模式</p>
-            <div class="status">
-              <p>📱 离线功能正常运行</p>
-              <p>💾 本地数据已缓存</p>
-              <p>🔄 网络恢复后将自动同步</p>
-            </div>
-            ${isDevelopment ? '<div class="dev-notice">⚠️ 开发环境：请确保开发服务器正在运行，然后刷新页面</div>' : ''}
-            <button onclick="window.location.reload()">🔄 重新加载</button>
-            <button onclick="checkOnline()">🌐 检查网络</button>
-          </div>
-          
-          <script>
-            function checkOnline() {
-              if (navigator.onLine) {
-                alert('网络已连接，正在重新加载...');
-                window.location.reload();
-              } else {
-                alert('仍处于离线状态，请检查网络连接');
-              }
-            }
-            
-            // 监听网络状态变化
-            window.addEventListener('online', () => {
-              console.log('网络已连接');
-              window.location.reload();
-            });
-            
-            console.log('天气小鸭离线页面已加载');
-          </script>
-        </body>
-        </html>
-      `, {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' }
-      });
-    }
-
-    // 对于其他HTML请求，返回通用离线页面
+    // 对于HTML请求，返回离线页面
     if (request.headers.get('accept') && request.headers.get('accept').includes('text/html')) {
       return new Response(`
         <!DOCTYPE html>
