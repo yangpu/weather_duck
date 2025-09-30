@@ -1,7 +1,7 @@
 // 优化的日记服务
 import { supabase } from '../config/supabase'
 import { cacheService } from './cacheService'
-import { dateRangeManager } from './dateRangeManager'
+
 import type { DiaryData, DiaryServiceInterface } from '../types/diary'
 
 class DiaryService implements DiaryServiceInterface {

@@ -716,8 +716,8 @@ async function handleLoadNext(startDateStr: string, endDateStr: string, isForeca
             content: '', 
             images: [], 
             videos: [], 
-            mood: null,
-            weather_data: null
+            mood: undefined,
+            weather_data: undefined
           }
           diaryCache.value.set(date, emptyDiary)
           optimizedUnifiedCacheService.setDiaryData(date, emptyDiary)
@@ -842,8 +842,8 @@ async function handleLoadPrevious(startDateStr: string, endDateStr: string) {
             content: '', 
             images: [], 
             videos: [], 
-            mood: null,
-            weather_data: null
+            mood: undefined,
+            weather_data: undefined
           }
           diaryCache.value.set(date, emptyDiary)
           optimizedUnifiedCacheService.setDiaryData(date, emptyDiary)
