@@ -14,7 +14,8 @@ const STATIC_CACHE_URLS = isDevelopment ? [
   '/favicon.svg',
   '/apple-touch-icon.svg',
   '/icons/icon.svg',
-  '/weather_duck.jpg'
+  '/weather_duck.jpg',
+  '/ios-location-debug.html'
 ] : [
   // 生产环境缓存完整资源
   '/',
@@ -24,7 +25,8 @@ const STATIC_CACHE_URLS = isDevelopment ? [
   '/apple-touch-icon.svg',
   '/icons/icon.svg',
   '/weather_duck.jpg',
-  '/src/main.ts'
+  '/src/main.ts',
+  '/ios-location-debug.html'
 ];
 
 // 需要缓存的API端点模式
@@ -36,16 +38,29 @@ const API_CACHE_PATTERNS = [
 
 // Service Worker 安装
 self.addEventListener('install', (event) => {
-  // console.log('Service Worker 安装中...');
-
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
-        // console.log('缓存静态资源');
-        return cache.addAll(STATIC_CACHE_URLS);
+      .then(async (cache) => {
+        // 逐个添加资源，避免某个资源失败导致整体失败
+        const cachePromises = STATIC_CACHE_URLS.map(async (url) => {
+          try {
+            const response = await fetch(url);
+            if (response.ok) {
+              await cache.put(url, response);
+            }
+          } catch (error) {
+            // 静默处理错误，不阻止安装过程
+          }
+        });
+
+        await Promise.allSettled(cachePromises);
       })
       .then(() => {
         // 强制激活新的Service Worker
+        return self.skipWaiting();
+      })
+      .catch(() => {
+        // 即使缓存失败也要跳过等待，确保SW能正常工作
         return self.skipWaiting();
       })
   );
@@ -53,15 +68,12 @@ self.addEventListener('install', (event) => {
 
 // Service Worker 激活
 self.addEventListener('activate', (event) => {
-  // console.log('Service Worker 激活中...');
-
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           // 删除旧版本的缓存
           if (cacheName !== CACHE_NAME && cacheName !== DATA_CACHE_NAME) {
-            //console.log('删除旧缓存:', cacheName);
             return caches.delete(cacheName);
           }
         })
@@ -78,519 +90,125 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // 开发环境下跳过 Vite 相关请求
-  if (isDevelopment) {
-    if (url.pathname.includes('/@vite/') ||
-      url.pathname.includes('/src/') ||
-      url.pathname.includes('?t=') ||
-      url.pathname.includes('/node_modules/') ||
-      url.pathname.includes('/__vite_ping') ||
-      url.searchParams.has('t') ||
-      url.pathname.includes('?import') ||
-      url.pathname.includes('?direct') ||
-      url.pathname.includes('?worker') ||
-      url.pathname.includes('?raw') ||
-      url.pathname.includes('?url') ||
-      url.pathname.includes('?v=') ||
-      url.searchParams.has('v') ||
-      url.pathname.endsWith('.ts') ||
-      url.pathname.endsWith('.tsx') ||
-      url.pathname.endsWith('.jsx') ||
-      url.pathname.endsWith('.vue') ||
-      url.port !== location.port) { // 跳过不同端口的请求
-      return; // 不拦截，让浏览器直接处理
-    }
-  }
-
-  // 跳过 Supabase 存储的图片请求，让它们直接通过网络获取
-  if (url.pathname.includes('/storage/v1/object/public/')) {
-    return; // 不拦截，让浏览器直接处理
-  }
-
-  // 处理API请求（数据缓存）
-  if (isApiRequest(url)) {
-    event.respondWith(handleApiRequest(request));
+  // 跳过非HTTP请求
+  if (!request.url.startsWith('http')) {
     return;
   }
 
-  // 处理静态资源请求
-  if (request.method === 'GET') {
-    event.respondWith(handleStaticRequest(request));
+  // 跳过开发环境的热更新请求
+  if (isDevelopment && (
+    url.pathname.includes('/@vite/') ||
+    url.pathname.includes('/@fs/') ||
+    url.pathname.includes('/node_modules/') ||
+    url.searchParams.has('t') ||
+    request.url.includes('hot-update')
+  )) {
+    return;
+  }
+
+  // API请求缓存策略
+  if (API_CACHE_PATTERNS.some(pattern => pattern.test(request.url))) {
+    event.respondWith(
+      caches.open(DATA_CACHE_NAME).then(cache => {
+        return fetch(request)
+          .then(response => {
+            // 只缓存成功的GET请求
+            if (request.method === 'GET' && response.status === 200) {
+              cache.put(request, response.clone());
+            }
+            return response;
+          })
+          .catch(() => {
+            // 网络失败时返回缓存
+            return cache.match(request);
+          });
+      })
+    );
+    return;
+  }
+
+  // 静态资源缓存策略
+  event.respondWith(
+    caches.match(request)
+      .then(response => {
+        // 缓存命中，返回缓存
+        if (response) {
+          return response;
+        }
+
+        // 缓存未命中，发起网络请求
+        return fetch(request)
+          .then(response => {
+            // 检查响应是否有效
+            if (!response || response.status !== 200 || response.type !== 'basic') {
+              return response;
+            }
+
+            // 克隆响应用于缓存
+            const responseToCache = response.clone();
+
+            caches.open(CACHE_NAME)
+              .then(cache => {
+                cache.put(request, responseToCache);
+              });
+
+            return response;
+          })
+          .catch(() => {
+            // 网络失败时的降级处理
+            if (request.destination === 'document') {
+              return caches.match('/index.html');
+            }
+            return new Response('', { status: 404 });
+          });
+      })
+  );
+});
+
+// 后台同步
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'background-sync') {
+    event.waitUntil(
+      // 执行后台同步任务
+      Promise.resolve()
+    );
   }
 });
 
-// 判断是否为API请求
-function isApiRequest(url) {
-  return API_CACHE_PATTERNS.some(pattern => pattern.test(url.href));
-}
+// 推送通知
+self.addEventListener('push', (event) => {
+  if (event.data) {
+    const data = event.data.json();
 
-// 处理API请求 - 缓存优先策略（离线优先）
-async function handleApiRequest(request) {
-  const cache = await caches.open(DATA_CACHE_NAME);
-  const url = new URL(request.url);
-
-  // console.log('🔍 处理API请求:', url.pathname);
-
-  // 首先检查缓存（缓存优先策略）
-  const cachedResponse = await cache.match(request);
-
-  // 检查网络状态
-  const isOnline = navigator.onLine !== false;
-
-  if (cachedResponse && !isOnline) {
-    // 离线状态且有缓存，直接返回缓存
-    //console.log('📱 离线模式，返回缓存数据:', request.url);
-    return cachedResponse;
-  }
-
-  if (cachedResponse) {
-    // 有缓存的情况下，先返回缓存，然后在后台更新
-    //console.log('📦 返回缓存数据（后台更新）:', request.url);
-
-    // 后台更新缓存
-    fetch(request).then(networkResponse => {
-      if (networkResponse && networkResponse.ok) {
-        //console.log('🔄 后台更新缓存:', request.url);
-        cache.put(request, networkResponse.clone());
-      }
-    }).catch(error => {
-      console.error('🔄 后台更新失败:', error.message);
-    });
-
-    return cachedResponse;
-  }
-
-  // 没有缓存，尝试网络请求
-  try {
-    const networkResponse = await fetch(request);
-
-    if (networkResponse.ok) {
-      // 成功时更新缓存
-      //console.log('✅ 网络请求成功，更新缓存:', request.url);
-
-      // 只缓存 GET 请求，Cache API 不支持其他方法
-      if (request.method === 'GET') {
-        try {
-          await cache.put(request, networkResponse.clone());
-          //console.log('✅ 缓存更新成功:', request.url);
-        } catch (cacheError) {
-          console.warn('⚠️ 缓存更新失败:', request.url, cacheError);
-        }
-      }
-
-      return networkResponse;
-    } else {
-      // 只对非图片资源记录错误日志
-      if (!request.url.includes('/storage/v1/object/public/')) {
-        console.warn('❌ 网络请求失败，状态码:', networkResponse.status);
-      }
-    }
-  } catch (error) {
-    // 只对非图片资源记录异常日志
-    if (!request.url.includes('/storage/v1/object/public/')) {
-      console.warn('❌ 网络请求异常:', request.url, error.message);
-    }
-  }
-
-  // 只对非图片资源记录缓存查找日志
-  if (!request.url.includes('/storage/v1/object/public/')) {
-    //console.log('没有Service Worker缓存，尝试从其他缓存源获取:', request.url);
-  }
-
-  // 尝试从localStorage获取缓存数据
-  try {
-    if (url.pathname.includes('weather_diaries') || url.pathname.includes('diaries')) {
-      // 尝试从localStorage获取日记数据
-      const diaryData = [];
-      const urlParams = new URLSearchParams(url.search);
-      const startDate = urlParams.get('date.gte') || urlParams.get('date') || '2025-09-01';
-      const endDate = urlParams.get('date.lte') || startDate;
-
-      // 生成日期范围
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().slice(0, 10);
-        const localKey = `diary_${dateStr}`;
-        const localData = localStorage.getItem(localKey);
-        if (localData) {
-          try {
-            const diary = JSON.parse(localData);
-            diaryData.push(diary);
-            //console.log('从localStorage恢复日记数据:', dateStr);
-          } catch (e) {
-            console.warn('解析localStorage日记数据失败:', dateStr, e);
+    event.waitUntil(
+      self.registration.showNotification(data.title || '天气鸭', {
+        body: data.body || '您有新的天气提醒',
+        icon: '/icons/icon.svg',
+        badge: '/icons/icon.svg',
+        tag: 'weather-notification',
+        requireInteraction: false,
+        actions: [
+          {
+            action: 'view',
+            title: '查看详情'
+          },
+          {
+            action: 'close',
+            title: '关闭'
           }
-        }
-      }
-
-      if (diaryData.length > 0) {
-        //console.log('返回localStorage中的日记数据:', diaryData.length, '条');
-        return new Response(JSON.stringify(diaryData), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-    } else if (url.pathname.includes('weather') || url.hostname.includes('open-meteo')) {
-      // 尝试从localStorage获取天气数据
-      const urlParams = new URLSearchParams(url.search);
-      const startDate = urlParams.get('start_date') || '2025-09-01';
-      const endDate = urlParams.get('end_date') || startDate;
-
-      const weatherData = {
-        daily: {
-          time: [],
-          temperature_2m_max: [],
-          temperature_2m_min: [],
-          precipitation_sum: [],
-          windspeed_10m_max: [],
-          winddirection_10m_dominant: [],
-          cloudcover_mean: [],
-          weathercode: []
-        }
-      };
-
-      // 生成日期范围
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      let hasData = false;
-
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().slice(0, 10);
-        const localKey = `weather_${dateStr}`;
-        const localData = localStorage.getItem(localKey);
-        if (localData) {
-          try {
-            const weather = JSON.parse(localData);
-            if (weather && !weather.isPlaceholder) {
-              weatherData.daily.time.push(dateStr);
-              weatherData.daily.temperature_2m_max.push(weather.temperature?.max || 0);
-              weatherData.daily.temperature_2m_min.push(weather.temperature?.min || 0);
-              weatherData.daily.precipitation_sum.push(weather.precipitation || 0);
-              weatherData.daily.windspeed_10m_max.push(weather.windSpeed || 0);
-              weatherData.daily.winddirection_10m_dominant.push(weather.windDirection || 0);
-              weatherData.daily.cloudcover_mean.push(weather.cloudCover || 0);
-              weatherData.daily.weathercode.push(weather.weathercode || 0);
-              hasData = true;
-              //console.log('从localStorage恢复天气数据:', dateStr);
-            }
-          } catch (e) {
-            console.warn('解析localStorage天气数据失败:', dateStr, e);
-          }
-        }
-      }
-
-      if (hasData) {
-        //console.log('返回localStorage中的天气数据:', weatherData.daily.time.length, '条');
-        return new Response(JSON.stringify(weatherData), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-    }
-  } catch (error) {
-    console.warn('从localStorage获取缓存数据失败:', error);
+        ]
+      })
+    );
   }
+});
 
-  // 最后的兜底响应 - 只对非图片资源记录日志
-  if (!request.url.includes('/storage/v1/object/public/')) {
-    //console.log('没有任何缓存数据，返回离线响应:', request.url);
-  }
+// 通知点击处理
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
 
-  let offlineResponse;
-  let responseHeaders = { 'Content-Type': 'application/json' };
-
-  if (url.pathname.includes('/storage/v1/object/public/')) {
-    // 对于图片资源，返回404状态，不记录日志
-    return new Response(null, { status: 404 });
-  } else if (url.pathname.includes('weather_diaries') || url.pathname.includes('diaries')) {
-    // 日记API返回空数组格式，符合Supabase响应格式
-    offlineResponse = [];
-  } else if (url.pathname.includes('weather') || url.hostname.includes('open-meteo')) {
-    // 天气API返回null或空对象
-    offlineResponse = {
-      daily: {
-        time: [],
-        temperature_2m_max: [],
-        temperature_2m_min: [],
-        precipitation_sum: [],
-        windspeed_10m_max: [],
-        winddirection_10m_dominant: [],
-        cloudcover_mean: [],
-        weathercode: []
-      },
-      offline: true,
-      message: '离线模式：暂无缓存数据'
-    };
-  } else {
-    // 其他API返回通用格式
-    offlineResponse = {
-      error: '当前离线，请检查网络连接',
-      offline: true,
-      timestamp: new Date().toISOString()
-    };
-  }
-
-  return new Response(
-    JSON.stringify(offlineResponse),
-    {
-      status: 200,
-      headers: responseHeaders
-    }
-  );
-}
-
-// 处理静态资源请求 - 缓存优先策略
-async function handleStaticRequest(request) {
-  const cache = await caches.open(CACHE_NAME);
-  const cachedResponse = await cache.match(request);
-  const url = new URL(request.url);
-
-  if (cachedResponse) {
-    // 有缓存，直接返回
-    return cachedResponse;
-  }
-
-  try {
-    // 没有缓存，尝试网络请求
-    const networkResponse = await fetch(request);
-
-    if (networkResponse.ok) {
-      // 只缓存 GET 请求，且是支持的URL scheme，且不是开发环境的动态资源
-      if (request.method === 'GET' &&
-        (url.protocol === 'http:' || url.protocol === 'https:') &&
-        (!isDevelopment || !url.searchParams.has('t'))) {
-        cache.put(request, networkResponse.clone());
-      }
-    }
-
-    return networkResponse;
-  } catch (error) {
-    // 开发环境下，对于 Vite 相关资源的失败不记录警告
-    if (!isDevelopment ||
-      (!url.pathname.includes('/@vite/') &&
-        !url.pathname.includes('/src/') &&
-        !url.searchParams.has('t'))) {
-      console.warn('静态资源请求失败:', request.url);
-    }
-
-    // 在离线模式下，尝试提供基本的静态资源
-    if (url.pathname === '/icons/icon.svg') {
-      // 返回一个简单的 SVG 图标作为后备
-      return new Response(`
-        <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="256" cy="256" r="256" fill="#4A90E2"/>
-          <ellipse cx="256" cy="300" rx="80" ry="60" fill="#FFD700"/>
-          <circle cx="256" cy="200" r="50" fill="#FFD700"/>
-          <ellipse cx="280" cy="210" rx="20" ry="8" fill="#FF8C00"/>
-          <circle cx="245" cy="190" r="6" fill="#000"/>
-          <circle cx="247" cy="188" r="2" fill="#FFF"/>
-          <ellipse cx="220" cy="280" rx="25" ry="35" fill="#FFA500" transform="rotate(-20 220 280)"/>
-        </svg>
-      `, {
-        headers: { 'Content-Type': 'image/svg+xml' }
-      });
-    }
-
-    // 对于根路径或 index.html 请求，返回 Vue 应用的离线页面
-    if ((url.pathname === '/' || url.pathname === '/index.html') &&
-      request.headers.get('accept') && request.headers.get('accept').includes('text/html')) {
-      return new Response(`
-        <!DOCTYPE html>
-        <html lang="zh-CN">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>天气小鸭日记 - 离线模式</title>
-          <link rel="manifest" href="/manifest.json">
-          <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              color: white;
-              min-height: 100vh;
-              display: flex;
-              flex-direction: column;
-              justify-content: center;
-              align-items: center;
-              text-align: center;
-              padding: 20px;
-            }
-            .container {
-              background: rgba(255, 255, 255, 0.1);
-              backdrop-filter: blur(10px);
-              border-radius: 20px;
-              padding: 40px;
-              max-width: 500px;
-              border: 1px solid rgba(255, 255, 255, 0.2);
-            }
-            .icon { font-size: 4em; margin-bottom: 20px; }
-            h1 { font-size: 2.5em; margin-bottom: 15px; }
-            p { font-size: 1.1em; opacity: 0.9; margin-bottom: 20px; line-height: 1.6; }
-            .status {
-              background: rgba(255, 255, 255, 0.1);
-              padding: 15px;
-              border-radius: 10px;
-              margin: 20px 0;
-            }
-            button {
-              background: rgba(255, 255, 255, 0.2);
-              border: 1px solid rgba(255, 255, 255, 0.3);
-              color: white;
-              padding: 15px 30px;
-              border-radius: 10px;
-              cursor: pointer;
-              font-size: 16px;
-              margin: 10px;
-              transition: all 0.3s ease;
-            }
-            button:hover {
-              background: rgba(255, 255, 255, 0.3);
-              transform: translateY(-2px);
-            }
-            .dev-notice {
-              background: rgba(255, 193, 7, 0.2);
-              border: 1px solid rgba(255, 193, 7, 0.5);
-              padding: 15px;
-              border-radius: 10px;
-              margin-top: 20px;
-              font-size: 14px;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="icon">🦆</div>
-            <h1>天气小鸭日记</h1>
-            <p>当前处于离线模式</p>
-            <div class="status">
-              <p>📱 离线功能正常运行</p>
-              <p>💾 本地数据已缓存</p>
-              <p>🔄 网络恢复后将自动同步</p>
-            </div>
-            ${isDevelopment ? '<div class="dev-notice">⚠️ 开发环境：请确保开发服务器正在运行，然后刷新页面</div>' : ''}
-            <button onclick="window.location.reload()">🔄 重新加载</button>
-            <button onclick="checkOnline()">🌐 检查网络</button>
-          </div>
-          
-          <script>
-            function checkOnline() {
-              if (navigator.onLine) {
-                alert('网络已连接，正在重新加载...');
-                window.location.reload();
-              } else {
-                alert('仍处于离线状态，请检查网络连接');
-              }
-            }
-            
-            // 监听网络状态变化
-            window.addEventListener('online', () => {
-              console.log('网络已连接');
-              window.location.reload();
-            });
-            
-            console.log('天气小鸭离线页面已加载');
-          </script>
-        </body>
-        </html>
-      `, {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' }
-      });
-    }
-
-    // 对于其他HTML请求，返回通用离线页面
-    if (request.headers.get('accept') && request.headers.get('accept').includes('text/html')) {
-      return new Response(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>天气小鸭 - 离线模式</title>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <style>
-            body { 
-              font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-              text-align: center; 
-              padding: 50px;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              color: white;
-              min-height: 100vh;
-              margin: 0;
-              display: flex;
-              flex-direction: column;
-              justify-content: center;
-            }
-            .offline-icon { font-size: 64px; margin-bottom: 20px; }
-            h1 { margin-bottom: 10px; }
-            p { opacity: 0.8; }
-            .retry-btn {
-              background: rgba(255,255,255,0.2);
-              border: 1px solid rgba(255,255,255,0.3);
-              color: white;
-              padding: 12px 24px;
-              border-radius: 6px;
-              margin-top: 20px;
-              cursor: pointer;
-            }
-            .dev-notice {
-              background: rgba(255,255,255,0.1);
-              padding: 15px;
-              border-radius: 8px;
-              margin-top: 20px;
-              font-size: 14px;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="offline-icon">🦆</div>
-          <h1>天气小鸭</h1>
-          <p>当前处于离线模式</p>
-          ${isDevelopment ? '<div class="dev-notice">开发环境：请确保开发服务器正在运行</div>' : '<p>请检查网络连接后重试</p>'}
-          <button class="retry-btn" onclick="window.location.reload()">重新加载</button>
-        </body>
-        </html>
-      `, {
-        headers: { 'Content-Type': 'text/html' }
-      });
-    }
-
-    return new Response('资源不可用', { status: 404 });
-  }
-}
-
-// 后台同步（如果支持）
-if ('sync' in self.registration) {
-  self.addEventListener('sync', (event) => {
-    if (event.tag === 'background-sync') {
-      //console.log('执行后台同步');
-      event.waitUntil(syncData());
-    }
-  });
-}
-
-// 同步数据函数
-async function syncData() {
-  try {
-    // 这里可以实现数据同步逻辑
-    //console.log('后台数据同步完成');
-  } catch (error) {
-    console.error('后台同步失败:', error);
-  }
-}
-
-// 消息处理
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-
-  if (event.data && event.data.type === 'CACHE_DATA') {
-    // 缓存特定数据
-    const { key, data } = event.data;
-    caches.open(DATA_CACHE_NAME).then(cache => {
-      cache.put(key, new Response(JSON.stringify(data)));
-    });
+  if (event.action === 'view') {
+    event.waitUntil(
+      clients.openWindow('/')
+    );
   }
 });

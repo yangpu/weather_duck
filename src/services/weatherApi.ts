@@ -568,52 +568,24 @@ export class WeatherApiService {
     return '北风'
   }
 
-  // 获取当前位置（增强版，带超时和错误处理）
+  // 获取当前位置（使用增强的LocationHelper）
   static async getCurrentLocation(): Promise<{ latitude: number; longitude: number }> {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error('浏览器不支持定位'))
-        return
+    try {
+      // 动态导入LocationHelper以避免循环依赖
+      const { LocationHelper } = await import('../utils/locationHelper')
+      
+      // 获取位置信息
+      const locationResult = await LocationHelper.getCurrentLocation()
+      
+      return {
+        latitude: locationResult.latitude,
+        longitude: locationResult.longitude
       }
-
-      const options = {
-        enableHighAccuracy: false, // 降低精度要求，提高成功率
-        timeout: 10000, // 10秒超时
-        maximumAge: 300000 // 5分钟内的缓存位置
-      }
-
-      const success = (position: GeolocationPosition) => {
-        const { latitude, longitude } = position.coords
-
-        
-        // 检查坐标合理性（中国大致范围）
-        if (latitude < 3 || latitude > 54 || longitude < 73 || longitude > 135) {
-          console.warn('定位坐标超出中国范围，可能定位错误')
-          reject(new Error('定位坐标异常，可能不在中国境内'))
-          return
-        }
-        
-        resolve({ latitude, longitude })
-      }
-
-      const error = (err: GeolocationPositionError) => {
-        let message = '定位失败'
-        switch (err.code) {
-          case err.PERMISSION_DENIED:
-            message = '定位权限被拒绝，请在浏览器设置中允许定位'
-            break
-          case err.POSITION_UNAVAILABLE:
-            message = '定位信息不可用，请检查网络连接'
-            break
-          case err.TIMEOUT:
-            message = '定位超时，请重试'
-            break
-        }
-        console.error('定位错误:', message, err)
-        reject(new Error(message))
-      }
-
-      navigator.geolocation.getCurrentPosition(success, error, options)
-    })
+    } catch (error) {
+      // 最后的兜底方案：直接返回深圳坐标
+      const defaultLocation = { latitude: 22.5429, longitude: 114.0596 }
+      
+      return defaultLocation
+    }
   }
 }

@@ -277,26 +277,94 @@ async function useMyLocation() {
   errorMessage.value = ''
   
   try {
-    const loc = await WeatherApiService.getCurrentLocation()
-    latitude.value = loc.latitude
-    longitude.value = loc.longitude
-    isDefaultLocation.value = false
+    // 首先检查定位功能可用性
+    const { LocationHelper } = await import('./utils/locationHelper')
+    const { LocationErrorHandler } = await import('./utils/locationErrorHandler')
     
-    displayAddress.value = await GeocodingService.reverseGeocode(latitude.value, longitude.value)
-    setSelectedToCurrentLocation(displayAddress.value)
+    const availability = await LocationHelper.checkLocationAvailability()
     
-    // 定位成功提示
-    MessagePlugin.success('定位成功！')
+    // 根据检查结果给出具体的用户提示
+    if (!availability.geolocationSupported) {
+      throw new Error('您的浏览器不支持定位功能，请手动选择城市或升级浏览器')
+    }
+    
+    if (!availability.secureContext) {
+      throw new Error('定位功能需要HTTPS环境，请使用 https://yangruoji.com 访问')
+    }
+    
+    if (availability.permissionStatus === 'denied') {
+      throw new Error('定位权限被拒绝，请在浏览器地址栏左侧点击🔒图标，允许位置访问权限')
+    }
+    
+    // 获取位置信息
+    const locationResult = await LocationHelper.getCurrentLocation()
+    
+    latitude.value = locationResult.latitude
+    longitude.value = locationResult.longitude
+    
+    // 根据定位来源显示不同的成功消息
+    const sourceMessages = {
+      geolocation: '🎯 GPS定位成功！',
+      ip: '🌐 IP定位成功！',
+      default: '🏠 使用默认位置'
+    }
+    
+    if (locationResult.source === 'default') {
+      isDefaultLocation.value = true
+      MessagePlugin.warning(sourceMessages[locationResult.source])
+    } else {
+      isDefaultLocation.value = false
+      MessagePlugin.success(sourceMessages[locationResult.source])
+    }
+    
+    // 获取地址信息
+    try {
+      displayAddress.value = await GeocodingService.reverseGeocode(latitude.value, longitude.value)
+      setSelectedToCurrentLocation(displayAddress.value)
+    } catch (geoError) {
+      console.warn('逆地理编码失败:', geoError)
+      displayAddress.value = locationResult.source === 'default' ? '北京市 · 中国' : '未知位置'
+      setSelectedToCurrentLocation(displayAddress.value)
+    }
     
     fetchAll(false) // 定位成功后不强制刷新，优先使用缓存
+    
   } catch (e: any) {
-    console.error('定位失败:', e)
+    // 使用新的错误处理工具
+    if (e.code !== undefined && typeof e.code === 'number') {
+      // 这是一个 GeolocationPositionError
+      const { LocationErrorHandler } = await import('./utils/locationErrorHandler')
+      const locationError = LocationErrorHandler.handleLocationError(e)
+      
+      // 显示用户友好的错误消息
+      MessagePlugin.error({
+        content: locationError.message,
+        duration: 5000
+      })
+      
+      // 显示解决方案
+      const solutions = LocationErrorHandler.getErrorSolutions(locationError)
+      if (solutions.length > 0) {
+        setTimeout(() => {
+          MessagePlugin.info({
+            content: `💡 建议：${solutions[0]}`,
+            duration: 4000
+          })
+        }, 1000)
+      }
+    } else {
+      // 其他类型的错误（非定位API错误）
+      let errorMsg = e?.message || '定位失败'
+      
+      MessagePlugin.error({
+        content: errorMsg,
+        duration: 5000
+      })
+      
+
+    }
     
-    // 使用tdesign的MessagePlugin显示错误提示
-    const errorMsg = e?.message || '定位失败，请检查浏览器定位权限或网络连接'
-    MessagePlugin.error(errorMsg)
-    
-    // 定位失败时使用默认坐标（广东深圳）
+    // 定位失败时使用默认坐标（深圳）
     latitude.value = 22.5429
     longitude.value = 114.0596
     isDefaultLocation.value = true
