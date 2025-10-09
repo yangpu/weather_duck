@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { WeatherData } from '../types/weather'
 
 interface Props {
@@ -78,49 +78,113 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-// 获取全局天气数据列表用于导航
-const globalWeatherList = computed(() => {
-  // 优先从全局数据管理器获取
+const weatherListRef = ref<WeatherData[]>([])
+
+// 初始化获取天气列表（带多重回退）
+function hydrateWeatherList() {
   const globalManager = (window as any).__globalDataManager
-  if (globalManager) {
-    return globalManager.getWeatherList() || []
+  if (globalManager && typeof globalManager.getWeatherList === 'function') {
+    const list = globalManager.getWeatherList() || []
+    if (Array.isArray(list) && list.length) {
+      weatherListRef.value = list
+      return
+    }
   }
-  // 兼容性：从全局变量获取
-  return (window as any).__weatherList || []
-})
+  // 兼容性：全局变量
+  const globalList = (window as any).__weatherList
+  if (Array.isArray(globalList) && globalList.length) {
+    weatherListRef.value = globalList
+    return
+  }
+  // 统一缓存服务回退
+  const unified = (window as any).__unifiedCacheService
+  if (unified && typeof unified.getWeatherList === 'function') {
+    const list = unified.getWeatherList() || []
+    if (Array.isArray(list) && list.length) {
+      weatherListRef.value = list
+    }
+  }
+}
+
+function normalizeDate(d: string | undefined | null): string {
+  if (!d) return ''
+  try {
+    return new Date(d).toISOString().slice(0, 10)
+  } catch {
+    const s = String(d).trim().replace(/\//g, '-')
+    return s.includes('T') ? s.split('T')[0] : s
+  }
+}
+
+function getCurrentIndex(): number {
+  if (!props.weather?.date || !weatherListRef.value.length) return -1
+  const target = normalizeDate(props.weather.date)
+  return weatherListRef.value.findIndex((w: WeatherData) => normalizeDate(w.date) === target)
+}
 
 // 检查是否有上一天/下一天
 const hasPreviousDay = computed(() => {
-  if (!props.weather?.date || !globalWeatherList.value.length) return false
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
-  return currentIndex > 0
+  const idx = getCurrentIndex()
+  return idx > 0
 })
 
 const hasNextDay = computed(() => {
-  if (!props.weather?.date || !globalWeatherList.value.length) return false
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
-  return currentIndex >= 0 && currentIndex < globalWeatherList.value.length - 1
+  const idx = getCurrentIndex()
+  return idx >= 0 && idx < weatherListRef.value.length - 1
 })
 
 function handlePreviousDay() {
   if (!hasPreviousDay.value) return
-  
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
+  const currentIndex = getCurrentIndex()
   if (currentIndex > 0) {
-    const previousWeather = globalWeatherList.value[currentIndex - 1]
+    const previousWeather = weatherListRef.value[currentIndex - 1]
     emit('dateChange', previousWeather.date)
   }
 }
 
 function handleNextDay() {
   if (!hasNextDay.value) return
-  
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
-  if (currentIndex >= 0 && currentIndex < globalWeatherList.value.length - 1) {
-    const nextWeather = globalWeatherList.value[currentIndex + 1]
+  const currentIndex = getCurrentIndex()
+  if (currentIndex >= 0 && currentIndex < weatherListRef.value.length - 1) {
+    const nextWeather = weatherListRef.value[currentIndex + 1]
     emit('dateChange', nextWeather.date)
   }
 }
+
+// 监听与灌入天气列表，避免缓存导致的初始空列表
+onMounted(() => {
+  // 初始灌入一次列表
+  hydrateWeatherList()
+
+  // 统一的事件处理器，兼容多种事件结构
+  const onWeatherReady = (e: any) => {
+    const detail = e?.detail || {}
+    const list = detail.weatherData || detail.weatherList || detail.list
+    if (Array.isArray(list) && list.length) {
+      weatherListRef.value = list
+    } else {
+      hydrateWeatherList()
+    }
+  }
+
+  window.addEventListener('weather:data-ready', onWeatherReady as EventListener)
+  window.addEventListener('weather:list-updated', onWeatherReady as EventListener)
+  window.addEventListener('globalData:weatherReady', onWeatherReady as EventListener)
+
+  // 当日期变化时，若列表仍为空则再尝试灌入
+  watch(() => props.weather?.date, () => {
+    if (!weatherListRef.value.length) {
+      hydrateWeatherList()
+    }
+  })
+})
+
+onBeforeUnmount(() => {
+  // 尝试移除监听（此处为兼容，具体实现可能由宿主管理）
+  window.removeEventListener('weather:data-ready', (null as any))
+  window.removeEventListener('weather:list-updated', (null as any))
+  window.removeEventListener('globalData:weatherReady', (null as any))
+})
 </script>
 
 <style scoped>

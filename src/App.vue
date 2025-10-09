@@ -174,7 +174,7 @@ const endDate = ref(defaultRange.endDate)
 const dateRangeValue = ref<[string, string]>([startDate.value, endDate.value])
 
 const weatherList = ref<WeatherData[]>([])
-const ts = () => new Date().toISOString()
+
 
 
 // 日记相关状态
@@ -212,16 +212,7 @@ function setScrollbarWidth() {
   document.documentElement.style.setProperty('--scrollbar-width', `${width}px`)
 }
 
-// 监听对话框状态变化
-function handleDialogStateChange() {
-  const hasVisibleDialog = diaryViewVisible.value || diaryEditVisible.value || aboutVisible.value
-  
-  if (hasVisibleDialog) {
-    document.body.classList.add('dialog-open')
-  } else {
-    document.body.classList.remove('dialog-open')
-  }
-}
+
 
 
 
@@ -387,7 +378,7 @@ async function fetchAll(forceRefresh: boolean = false) {
             backgroundResult.diariesData.forEach(diary => {
               diaryCache.value.set(diary.date, diary)
             })
-          }).catch(error => {
+          }).catch(() => {
           })
         } else {
 
@@ -988,7 +979,7 @@ onMounted(async () => {
       startDate.value,
       endDate.value
     )
-    const hasPlaceholder = initialWeather.some(w => (w as any).isPlaceholder)
+
 
     weatherList.value = [...initialWeather].sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()

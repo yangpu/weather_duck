@@ -152,28 +152,75 @@ const date = computed(() => {
   return DateUtils.formatFullDate(props.weather.date)
 })
 
-// 获取全局天气数据列表用于导航
 const globalWeatherList = computed(() => {
   // 优先从全局数据管理器获取
   const globalManager = (window as any).__globalDataManager
-  if (globalManager) {
-    return globalManager.getWeatherList() || []
+  const managerList = globalManager && typeof globalManager.getWeatherList === 'function'
+    ? (globalManager.getWeatherList() || [])
+    : []
+  if (Array.isArray(managerList) && managerList.length) {
+    return managerList
   }
   // 兼容性：从全局变量获取
-  return (window as any).__weatherList || []
+  const globalVarList = (window as any).__weatherList || []
+  if (Array.isArray(globalVarList) && globalVarList.length) {
+    return globalVarList
+  }
+  // 统一缓存服务回退
+  const unified = (window as any).__unifiedCacheService
+  const unifiedList = unified && typeof unified.getWeatherList === 'function'
+    ? (unified.getWeatherList() || [])
+    : []
+  return Array.isArray(unifiedList) ? unifiedList : []
 })
+
+function normalizeDate(d: string | undefined | null): string {
+  if (!d) return ''
+  try {
+    return new Date(d).toISOString().slice(0, 10)
+  } catch {
+    const s = String(d).trim().replace(/\//g, '-')
+    return s.includes('T') ? s.split('T')[0] : s
+  }
+}
+
+function getCurrentIndex(): number {
+  if (!props.weather?.date) return -1
+  const target = normalizeDate(props.weather.date)
+  const list = globalWeatherList.value || []
+  const idx = Array.isArray(list)
+    ? list.findIndex((w: WeatherData) => normalizeDate(w.date) === target)
+    : -1
+  if (idx !== -1) return idx
+  // 回退到统一缓存列表再尝试查找
+  const unified = (window as any).__unifiedCacheService
+  const alt = unified && typeof unified.getWeatherList === 'function'
+    ? (unified.getWeatherList() || [])
+    : []
+  return Array.isArray(alt)
+    ? alt.findIndex((w: WeatherData) => normalizeDate(w.date) === target)
+    : -1
+}
 
 // 检查是否有上一天/下一天
 const hasPreviousDay = computed(() => {
-  if (!props.weather?.date || !globalWeatherList.value.length) return false
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
-  return currentIndex > 0
+  const idx = getCurrentIndex()
+  return idx > 0
 })
 
 const hasNextDay = computed(() => {
-  if (!props.weather?.date || !globalWeatherList.value.length) return false
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
-  return currentIndex >= 0 && currentIndex < globalWeatherList.value.length - 1
+  const idx = getCurrentIndex()
+  // 有效列表长度（优先 globalWeatherList，再回退统一缓存）
+  const primary = globalWeatherList.value || []
+  let len = Array.isArray(primary) ? primary.length : 0
+  if (len === 0) {
+    const unified = (window as any).__unifiedCacheService
+    const alt = unified && typeof unified.getWeatherList === 'function'
+      ? (unified.getWeatherList() || [])
+      : []
+    len = Array.isArray(alt) ? alt.length : 0
+  }
+  return idx >= 0 && idx < len - 1
 })
 
 // 监听对话框打开，加载日记
@@ -264,21 +311,43 @@ function handleEdit() {
 
 function handlePreviousDay() {
   if (!hasPreviousDay.value) return
-  
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
+  const currentIndex = getCurrentIndex()
   if (currentIndex > 0) {
-    const previousWeather = globalWeatherList.value[currentIndex - 1]
-    emit('dateChange', previousWeather.date)
+    // 选择有效列表（优先使用非空的 globalWeatherList，否则回退统一缓存列表）
+    const primary = globalWeatherList.value || []
+    let list: WeatherData[] = Array.isArray(primary) && primary.length ? primary : []
+    if (!list.length) {
+      const unified = (window as any).__unifiedCacheService
+      const alt = unified && typeof unified.getWeatherList === 'function'
+        ? (unified.getWeatherList() || [])
+        : []
+      list = Array.isArray(alt) ? alt : []
+    }
+    const previousWeather = list[currentIndex - 1]
+    if (previousWeather) {
+      emit('dateChange', previousWeather.date)
+    }
   }
 }
 
 function handleNextDay() {
   if (!hasNextDay.value) return
-  
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
-  if (currentIndex >= 0 && currentIndex < globalWeatherList.value.length - 1) {
-    const nextWeather = globalWeatherList.value[currentIndex + 1]
-    emit('dateChange', nextWeather.date)
+  const currentIndex = getCurrentIndex()
+  // 选择有效列表（优先使用非空的 globalWeatherList，否则回退统一缓存列表）
+  const primary = globalWeatherList.value || []
+  let list: WeatherData[] = Array.isArray(primary) && primary.length ? primary : []
+  if (!list.length) {
+    const unified = (window as any).__unifiedCacheService
+    const alt = unified && typeof unified.getWeatherList === 'function'
+      ? (unified.getWeatherList() || [])
+      : []
+    list = Array.isArray(alt) ? alt : []
+  }
+  if (currentIndex >= 0 && currentIndex < list.length - 1) {
+    const nextWeather = list[currentIndex + 1]
+    if (nextWeather) {
+      emit('dateChange', nextWeather.date)
+    }
   }
 }
 

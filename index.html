@@ -381,58 +381,7 @@
         }
       });
 
-      // 移动端特定的超时处理
-      const timeoutDuration = debugInfo.isIOS ? 15000 : 10000;
-      loadingTimeout = setTimeout(() => {
-        // 在移动端显示超时信息
-        if (debugInfo.isIOS || /Android/i.test(navigator.userAgent)) {
-          const timeoutDiv = document.createElement('div');
-          timeoutDiv.style.cssText = `
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(255, 255, 255, 0.95);
-            color: #333;
-            padding: 20px;
-            border-radius: 10px;
-            font-size: 14px;
-            z-index: 10001;
-            max-width: 80%;
-            text-align: center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-          `;
-          timeoutDiv.innerHTML = `
-            <h3 style="margin: 0 0 10px 0; color: #e74c3c;">加载超时</h3>
-            <p style="margin: 0 0 10px 0;">应用加载时间过长，可能的原因：</p>
-            <ul style="text-align: left; margin: 0 0 15px 0; padding-left: 20px;">
-              <li>网络连接不稳定</li>
-              <li>服务器响应慢</li>
-              <li>移动端兼容性问题</li>
-            </ul>
-            <button onclick="window.location.reload()" style="
-              background: #3498db;
-              color: white;
-              border: none;
-              padding: 10px 20px;
-              border-radius: 5px;
-              cursor: pointer;
-              margin-right: 10px;
-            ">重新加载</button>
-            <button onclick="this.parentNode.remove()" style="
-              background: #95a5a6;
-              color: white;
-              border: none;
-              padding: 10px 20px;
-              border-radius: 5px;
-              cursor: pointer;
-            ">继续等待</button>
-          `;
-          document.body.appendChild(timeoutDiv);
-        }
-        
-        hideLoadingScreen();
-      }, timeoutDuration);
+
 
       // 移动端触摸事件优化
       if (debugInfo.isIOS) {
