@@ -33,7 +33,7 @@
 
     <div class="app-content">
       <t-alert v-if="errorMessage" theme="error" :message="errorMessage" class="no-print" />
-      <t-loading :loading="loading" text="数据加载中...">
+      <t-loading :loading="overlayVisible" text="数据加载中...">
 
         
         <div class="cards-grid">
@@ -142,6 +142,7 @@ import { WeatherApiService } from './services/weatherApi'
 import { weatherService } from './services/weatherService'
 import { diaryService } from './services/diaryService'
 import { optimizedUnifiedCacheService } from './services/optimizedUnifiedCacheService'
+import { enhancedOfflineCacheService } from './services/enhancedOfflineCacheService'
 import { dateRangeManager } from './services/dateRangeManager'
 import { globalDataManager } from './services/globalDataManager'
 import type { WeatherData } from './types/weather'
@@ -155,6 +156,8 @@ const loadingNext = ref(false)
 const loadingPrevious = ref(false)
 const hasLoadedFuture3Days = ref(false)
 const errorMessage = ref('')
+const overlayVisible = ref(true)
+
 
 const latitude = ref(22.5429)
 const longitude = ref(114.0596)
@@ -171,6 +174,8 @@ const endDate = ref(defaultRange.endDate)
 const dateRangeValue = ref<[string, string]>([startDate.value, endDate.value])
 
 const weatherList = ref<WeatherData[]>([])
+const ts = () => new Date().toISOString()
+
 
 // 日记相关状态
 const diaryViewVisible = ref(false)
@@ -272,7 +277,8 @@ async function onCitySelected(val: string) {
   selectedCity.value = val
   displayAddress.value = target.label
   isDefaultLocation.value = false
-  await fetchAll(false) // 初始加载不强制刷新，优先使用缓存
+  // 首屏缓存已渲染，后台同步不阻塞UI
+  fetchAll(false) // 初始加载不强制刷新，优先使用缓存
 }
 
 async function useMyLocation() {
@@ -291,7 +297,7 @@ async function useMyLocation() {
     // 定位成功提示
     MessagePlugin.success('定位成功！')
     
-    await fetchAll(false) // 定位成功后不强制刷新，优先使用缓存
+    fetchAll(false) // 定位成功后不强制刷新，优先使用缓存
   } catch (e: any) {
     console.error('定位失败:', e)
     
@@ -347,6 +353,7 @@ async function fetchAll(forceRefresh: boolean = false) {
       
       if (cachedResult && cachedResult.weatherData.length > 0) {
 
+
         
         // 立即更新UI，不显示loading
         weatherList.value = [...cachedResult.weatherData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -359,9 +366,12 @@ async function fetchAll(forceRefresh: boolean = false) {
         
         // 标记数据已加载，避免显示loading
         loading.value = false
+
+        overlayVisible.value = false
         
         // 只有在线时才进行后台更新
         if (navigator.onLine) {
+
 
           optimizedUnifiedCacheService.initializeDataOptimized(
             startDate.value,
@@ -371,13 +381,13 @@ async function fetchAll(forceRefresh: boolean = false) {
             false // 后台更新不强制刷新
           ).then(backgroundResult => {
 
+
             // 静默更新UI数据
             weatherList.value = [...backgroundResult.weatherData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
             backgroundResult.diariesData.forEach(diary => {
               diaryCache.value.set(diary.date, diary)
             })
           }).catch(error => {
-            console.warn('⚠️ 后台更新失败:', error)
           })
         } else {
 
@@ -386,16 +396,17 @@ async function fetchAll(forceRefresh: boolean = false) {
         return // 缓存数据已显示，直接返回
       }
     } catch (cacheError) {
-      console.warn('⚠️ 缓存数据获取失败，继续正常加载流程:', cacheError)
     }
   }
 
   // 如果没有缓存数据或强制刷新，显示loading并正常加载
-  loading.value = true
+
+  loading.value = weatherList.value.length === 0 || forceRefresh
 
   try {
     // 只有在强制刷新时才清除缓存
     if (forceRefresh) {
+
 
       // 清除所有缓存，强制重新获取数据
       optimizedUnifiedCacheService.clearCache()
@@ -440,8 +451,6 @@ async function fetchAll(forceRefresh: boolean = false) {
 
         
       } else {
-        console.warn('⚠️ 离线数据服务不可用，直接缓存到localStorage')
-        
         // 兜底：直接缓存到localStorage
         result.weatherData.forEach((weather: any) => {
           if (weather && weather.date && !weather.isPlaceholder) {
@@ -527,10 +536,12 @@ watch(weatherList, (newWeatherList) => {
 
 }, { immediate: true, deep: true })
 
+
+
 // 监听对话框状态变化，处理滚动条宽度
-watch([diaryViewVisible, diaryEditVisible, aboutVisible], () => {
-  handleDialogStateChange()
-}, { immediate: true })
+// watch([diaryViewVisible, diaryEditVisible, aboutVisible], () => {
+//   handleDialogStateChange()
+// }, { immediate: true })
 
 // 批量预加载日记概览（已被全局数据管理器替代，保留以防需要）
 /*
@@ -954,49 +965,89 @@ function handleAppInstalled() {
 onMounted(async () => {
   // 初始化滚动条宽度计算
   setScrollbarWidth()
-  
-  // 初始化Supabase
-  await initializeSupabase()
-  
-  // 初始化全局数据管理器
+
+  // 初始化全局数据管理器和统一缓存服务引用
   ;(window as any).__globalDataManager = globalDataManager
-  
-  // 暴露统一缓存服务到全局
   ;(window as any).__unifiedCacheService = optimizedUnifiedCacheService
-  
+
   // 初始化日期范围管理器
   dateRangeManager.initialize(startDate.value, endDate.value)
-  
+
+  // 启动显示过渡层（随后缓存渲染会立刻隐藏）
+  overlayVisible.value = true
+
+
+  // 首屏优先使用缓存渲染，不等待任何网络步骤
+  ;(window as any).__initialLatitude = latitude.value
+  ;(window as any).__initialLongitude = longitude.value
+
+  // 立即用离线缓存填充首屏（包含占位数据），避免长时间loading
   try {
-    const loc = await WeatherApiService.getCurrentLocation()
-    latitude.value = loc.latitude
-    longitude.value = loc.longitude
-    isDefaultLocation.value = false
+
+    const initialWeather = await enhancedOfflineCacheService.getWeatherDataCacheFirst(
+      startDate.value,
+      endDate.value
+    )
+    const hasPlaceholder = initialWeather.some(w => (w as any).isPlaceholder)
+
+    weatherList.value = [...initialWeather].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    )
+    loading.value = false
+
+    overlayVisible.value = false
+    if (window.markLoaded) { window.markLoaded('weather') }
   } catch (e) {
-    console.warn('初始定位失败，使用默认坐标:', e)
-    // 使用默认坐标（广东深圳）
-    latitude.value = 22.5429
-    longitude.value = 114.0596
-    isDefaultLocation.value = true
+    console.warn('首屏离线缓存填充失败:', e)
   }
-  
-  try {
-    displayAddress.value = await GeocodingService.reverseGeocode(latitude.value, longitude.value)
-  } catch {
-    displayAddress.value = isDefaultLocation.value ? '深圳市 · 广东省 · 中国' : '未知位置'
-  }
-  
-  // 若未选择城市，则默认使用当前定位
-  if (!selectedCity.value) {
-    setSelectedToCurrentLocation(displayAddress.value)
-  }
-  
-  // 只在初始化完成后调用一次 fetchAll
-  await fetchAll(false) // 初始加载不强制刷新，优先使用缓存
-  
+
+  fetchAll(false)
+
+  // Supabase 后台初始化（不阻塞首屏）
+  initializeSupabase().catch((e) => {
+    console.warn('Supabase 初始化失败（后台）:', e)
+  })
+
+  // 定位与逆地理在后台执行，成功后静默刷新
+  ;(async () => {
+    try {
+      const loc = await WeatherApiService.getCurrentLocation()
+      latitude.value = loc.latitude
+      longitude.value = loc.longitude
+      isDefaultLocation.value = false
+    } catch (e) {
+      console.warn('初始定位失败，使用默认坐标:', e)
+      latitude.value = 22.5429
+      longitude.value = 114.0596
+      isDefaultLocation.value = true
+    }
+
+    try {
+      displayAddress.value = await GeocodingService.reverseGeocode(latitude.value, longitude.value)
+    } catch {
+      displayAddress.value = isDefaultLocation.value ? '深圳市 · 广东省 · 中国' : '未知位置'
+    }
+
+    if (!selectedCity.value) {
+      setSelectedToCurrentLocation(displayAddress.value)
+    }
+
+    // 若经纬度发生变化，延迟触发一次刷新（避免与首屏的后台刷新重复）
+    const prevLat = (window as any).__initialLatitude ?? 22.5429
+    const prevLon = (window as any).__initialLongitude ?? 114.0596
+    const changed = prevLat !== latitude.value || prevLon !== longitude.value
+
+    if (changed) {
+      // 轻量防抖 + 使用既有 fetchAll 流程（内部已含缓存优先与后台更新）
+      setTimeout(() => {
+        fetchAll(false)
+      }, 1200)
+    }
+  })()
+
   // 标记日记数据已加载完成（初始化时）
   if (window.markLoaded) {
-    window.markLoaded('diary');
+    window.markLoaded('diary')
   }
 })
 
@@ -1008,6 +1059,10 @@ onUnmounted(() => {
 <style>
 html {
   scrollbar-gutter: stable;
+}
+
+html body {
+  width: 100% !important;
 }
 
 </style>

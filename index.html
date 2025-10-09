@@ -310,24 +310,33 @@
       // 检查是否所有内容都已加载
       function checkAllLoaded() {
         const allLoaded = Object.values(loadingStates).every(state => state);
-        
+        const anyDataLoaded = loadingStates.weather || loadingStates.diary;
+
         // 离线模式优化：如果离线且app已加载，立即隐藏加载屏幕
         if (!isOnline && loadingStates.app) {
           clearTimeout(loadingTimeout);
-          hideLoadingScreen();
+          hideLoadingScreen('[INDEX] offline + app loaded');
           return;
         }
-        
+
+        // 首屏体验优化：只要有天气或日记任意数据到位，立即隐藏过渡页
+        if (anyDataLoaded) {
+          clearTimeout(loadingTimeout);
+          hideLoadingScreen('[INDEX] data loaded (weather/diary)');
+          return;
+        }
+
         if (allLoaded) {
           clearTimeout(loadingTimeout);
-          hideLoadingScreen();
+          hideLoadingScreen('[INDEX] all loaded');
         }
       }
 
       // 隐藏加载屏幕
-      function hideLoadingScreen() {
+      function hideLoadingScreen(reason) {
         const loadingScreen = document.getElementById('loading-screen');
         if (loadingScreen) {
+          // console.log(`[TRANSITION ${new Date().toISOString()}] index hide loading-screen${reason ? ' - ' + reason : ''}`);
           loadingScreen.classList.add('fade-out');
           setTimeout(() => {
             loadingScreen.remove();
@@ -338,6 +347,12 @@
       // 标记某个部分已加载完成
       window.markLoaded = function(component) {
         loadingStates[component] = true;
+        // console.log(`[TRANSITION ${new Date().toISOString()}] index markLoaded(${component})`);
+        // 优先策略：首屏数据一到就隐藏过渡页
+        if (component === 'weather' || component === 'diary') {
+          hideLoadingScreen(`[INDEX] markLoaded(${component})`);
+          return;
+        }
         checkAllLoaded();
       };
 
