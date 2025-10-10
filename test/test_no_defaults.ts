@@ -1,6 +1,6 @@
 // 测试修改后的天气API - 不使用默认值
-import { WeatherApiService } from './src/services/weatherApi'
-import type { WeatherData } from './src/types/weather'
+import { WeatherApiService } from '../src/services/weatherApi'
+import type { WeatherData } from '../src/types/weather'
 
 async function testNoDefaultsAPI(): Promise<void> {
   console.log('🧪 测试无默认值的天气API...')

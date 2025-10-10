@@ -279,7 +279,6 @@ async function useMyLocation() {
   try {
     // 首先检查定位功能可用性
     const { LocationHelper } = await import('./utils/locationHelper')
-    const { LocationErrorHandler } = await import('./utils/locationErrorHandler')
     
     const availability = await LocationHelper.checkLocationAvailability()
     
@@ -330,39 +329,30 @@ async function useMyLocation() {
     fetchAll(false) // 定位成功后不强制刷新，优先使用缓存
     
   } catch (e: any) {
-    // 使用新的错误处理工具
+    // 简化的错误处理
+    let errorMsg = e?.message || '定位失败'
+    
+    // 针对常见定位错误提供友好提示
     if (e.code !== undefined && typeof e.code === 'number') {
-      // 这是一个 GeolocationPositionError
-      const { LocationErrorHandler } = await import('./utils/locationErrorHandler')
-      const locationError = LocationErrorHandler.handleLocationError(e)
-      
-      // 显示用户友好的错误消息
-      MessagePlugin.error({
-        content: locationError.message,
-        duration: 5000
-      })
-      
-      // 显示解决方案
-      const solutions = LocationErrorHandler.getErrorSolutions(locationError)
-      if (solutions.length > 0) {
-        setTimeout(() => {
-          MessagePlugin.info({
-            content: `💡 建议：${solutions[0]}`,
-            duration: 4000
-          })
-        }, 1000)
+      switch (e.code) {
+        case 1: // PERMISSION_DENIED
+          errorMsg = '定位权限被拒绝，请在浏览器设置中允许访问位置信息'
+          break
+        case 2: // POSITION_UNAVAILABLE
+          errorMsg = '定位服务暂时不可用，请检查网络连接'
+          break
+        case 3: // TIMEOUT
+          errorMsg = '定位请求超时，请检查网络连接和GPS信号'
+          break
+        default:
+          errorMsg = '定位功能遇到问题，将使用默认位置'
       }
-    } else {
-      // 其他类型的错误（非定位API错误）
-      let errorMsg = e?.message || '定位失败'
-      
-      MessagePlugin.error({
-        content: errorMsg,
-        duration: 5000
-      })
-      
-
     }
+    
+    MessagePlugin.error({
+      content: errorMsg,
+      duration: 5000
+    })
     
     // 定位失败时使用默认坐标（深圳）
     latitude.value = 22.5429
@@ -370,6 +360,11 @@ async function useMyLocation() {
     isDefaultLocation.value = true
     displayAddress.value = '深圳市 · 广东省 · 中国'
     setSelectedToCurrentLocation('深圳市 · 广东省 · 中国（默认）')
+    
+    // 显示使用默认位置的提示
+    MessagePlugin.warning('已使用默认位置：深圳市')
+    
+    await fetchAll(false) // 使用默认位置后不强制刷新，优先使用缓存
     
     // 显示使用默认位置的提示
     MessagePlugin.warning('已使用默认位置：深圳市')
@@ -1122,6 +1117,7 @@ html {
 
 html body {
   width: 100% !important;
+  margin: 0;
 }
 
 </style>

@@ -1,6 +1,6 @@
 // 测试天气API的完整性和占位数据生成
-import { WeatherApiService } from './src/services/weatherApi'
-import type { WeatherData } from './src/types/weather'
+import { WeatherApiService } from '../src/services/weatherApi'
+import type { WeatherData } from '../src/types/weather'
 
 async function testWeatherAPI(): Promise<void> {
   console.log('🧪 开始测试天气API...')
