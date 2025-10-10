@@ -264,7 +264,7 @@ function getOption(list: WeatherData[]): EChartsOption {
     xAxis: {
       type: 'category',
       data: dates,
-      boundaryGap: ['5%', '5%'], // 在首尾预留5%的间距
+      boundaryGap: true, // 在首尾预留间距
       axisLabel: { 
         color: '#495057',
         fontSize: 12,
