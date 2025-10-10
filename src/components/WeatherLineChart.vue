@@ -181,7 +181,9 @@ function getOption(list: WeatherData[]): EChartsOption {
         // 温度和降雨量数据，过滤掉图标序列
         params.forEach((param: any) => {
           if (param.seriesName === '降雨量') {
-            result += `${param.marker} ${param.seriesName}: ${param.value} mm<br/>`
+            const value = typeof param.value === 'number' ? 
+              Number(param.value).toFixed(param.value % 1 === 0 ? 0 : 1) : param.value
+            result += `${param.marker} ${param.seriesName}: ${value} mm<br/>`
           } else if (param.seriesName === '天气状态') {
             //result += `${param.marker} ${param.seriesName}: ${weather.icon} ${weather.description}<br/>`
           } else if (param.seriesName === '心情状态') {
@@ -189,7 +191,9 @@ function getOption(list: WeatherData[]): EChartsOption {
             //   result += `${param.marker} ${param.seriesName}: ${getMoodEmoji(mood)} ${mood}<br/>`
             // }
           } else if (param.seriesName.includes('温度')) {
-            result += `${param.marker} ${param.seriesName}: ${param.value} °C<br/>`
+            const value = typeof param.value === 'number' ? 
+              Number(param.value).toFixed(param.value % 1 === 0 ? 0 : 1) : param.value
+            result += `${param.marker} ${param.seriesName}: ${value} °C<br/>`
           }
         })
         result += `</div>`
@@ -260,7 +264,7 @@ function getOption(list: WeatherData[]): EChartsOption {
     xAxis: {
       type: 'category',
       data: dates,
-      boundaryGap: false,
+      boundaryGap: ['5%', '5%'], // 在首尾预留5%的间距
       axisLabel: { 
         color: '#495057',
         fontSize: 12,
@@ -294,7 +298,9 @@ function getOption(list: WeatherData[]): EChartsOption {
           fontWeight: 600
         },
         axisLabel: {
-          formatter: '{value}°',
+          formatter: function(value: number) {
+            return Number(value).toFixed(value % 1 === 0 ? 0 : 1) + '°'
+          },
           color: '#6c757d',
           fontSize: 11
         },
@@ -322,7 +328,9 @@ function getOption(list: WeatherData[]): EChartsOption {
           fontWeight: 600
         },
         axisLabel: {
-          formatter: '{value}mm',
+          formatter: function(value: number) {
+            return Number(value).toFixed(value % 1 === 0 ? 0 : 1) + 'mm'
+          },
           color: '#6c757d',
           fontSize: 11
         },

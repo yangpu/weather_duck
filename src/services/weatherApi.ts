@@ -5,26 +5,61 @@ import { WeatherApiResponse, WeatherData } from '../types/weather'
 const ARCHIVE_API_URL = 'https://archive-api.open-meteo.com/v1/archive'
 const FORECAST_API_URL = 'https://api.open-meteo.com/v1/forecast'
 
-// 天气代码对应的描述和图标
+// 天气代码对应的描述和图标 - 完整的 Open-Meteo API 天气代码映射
 const weatherCodes: Record<number, { description: string; icon: string }> = {
+  // 晴朗天气
   0: { description: '晴天', icon: '☀️' },
-  1: { description: '多云', icon: '⛅' },
-  2: { description: '阴天', icon: '☁️' },
-  3: { description: '雾', icon: '🌫️' },
+  
+  // 多云天气
+  1: { description: '晴间多云', icon: '🌤️' },
+  2: { description: '多云', icon: '⛅' },
+  3: { description: '阴天', icon: '☁️' },
+  
+  // 雾天
   45: { description: '雾', icon: '🌫️' },
   48: { description: '雾凇', icon: '🌫️' },
-  51: { description: '小雨', icon: '🌦️' },
-  53: { description: '中雨', icon: '🌧️' },
-  55: { description: '大雨', icon: '🌧️' },
+  
+  // 毛毛雨
+  51: { description: '小毛毛雨', icon: '🌦️' },
+  53: { description: '中毛毛雨', icon: '🌦️' },
+  55: { description: '大毛毛雨', icon: '🌧️' },
+  
+  // 冻毛毛雨
+  56: { description: '轻度冻毛毛雨', icon: '🌨️' },
+  57: { description: '重度冻毛毛雨', icon: '🌨️' },
+  
+  // 降雨
   61: { description: '小雨', icon: '🌦️' },
   63: { description: '中雨', icon: '🌧️' },
   65: { description: '大雨', icon: '🌧️' },
+  
+  // 冻雨
+  66: { description: '轻度冻雨', icon: '🌨️' },
+  67: { description: '重度冻雨', icon: '🌨️' },
+  
+  // 降雪
   71: { description: '小雪', icon: '🌨️' },
   73: { description: '中雪', icon: '❄️' },
   75: { description: '大雪', icon: '❄️' },
+  
+  // 雪粒
+  77: { description: '雪粒', icon: '🌨️' },
+  
+  // 阵雨
+  80: { description: '小阵雨', icon: '🌦️' },
+  81: { description: '中阵雨', icon: '🌧️' },
+  82: { description: '大阵雨', icon: '🌧️' },
+  
+  // 阵雪
+  85: { description: '小阵雪', icon: '🌨️' },
+  86: { description: '大阵雪', icon: '❄️' },
+  
+  // 雷暴
   95: { description: '雷雨', icon: '⛈️' },
-  96: { description: '雷阵雨', icon: '⛈️' },
-  99: { description: '强雷阵雨', icon: '⛈️' }
+  
+  // 雷暴伴冰雹
+  96: { description: '雷阵雨伴小冰雹', icon: '⛈️' },
+  99: { description: '雷阵雨伴大冰雹', icon: '⛈️' }
 }
 
 export class WeatherApiService {
@@ -160,7 +195,11 @@ export class WeatherApiService {
         }
 
         // 数据完整，添加到结果中
-        const info = weatherCodes[wcode] || { description: '未知', icon: '❓' }
+        const info = weatherCodes[wcode]
+        if (!info) {
+          console.warn(`未知天气代码: ${wcode} (日期: ${date})`)
+        }
+        const weatherInfo = info || { description: '未知', icon: '❓' }
         const windDirection = typeof windDirDeg === 'number' ? this.getWindDirection(windDirDeg) : '不详'
 
         result.push({
@@ -175,8 +214,8 @@ export class WeatherApiService {
           windDirection,
           precipitation: Math.round(precip * 100) / 100,
           cloudCover: Math.round(cloud),
-          description: info.description,
-          icon: info.icon
+          description: weatherInfo.description,
+          icon: weatherInfo.icon
         })
       })
 
@@ -291,7 +330,11 @@ export class WeatherApiService {
 
 
 
-      const info = weatherCodes[wcode] || { description: '未知', icon: '❓' }
+      const info = weatherCodes[wcode]
+      if (!info) {
+        console.warn(`未知天气代码: ${wcode} (日期: ${date})`)
+      }
+      const weatherInfo = info || { description: '未知', icon: '❓' }
       const windDirection = typeof windDirDeg === 'number' ? this.getWindDirection(windDirDeg) : '不详'
 
       result.push({
@@ -306,8 +349,8 @@ export class WeatherApiService {
         windDirection,
         precipitation: Math.round(precip * 100) / 100,
         cloudCover: Math.round(cloud),
-        description: info.description,
-        icon: info.icon
+        description: weatherInfo.description,
+        icon: weatherInfo.icon
       })
     })
 
@@ -412,14 +455,18 @@ export class WeatherApiService {
       const cw = response?.current_weather
       if (!cw) return null
       
-      const info = weatherCodes[cw.weathercode] || { description: '未知', icon: '❓' }
+      const info = weatherCodes[cw.weathercode]
+      if (!info) {
+        console.warn(`未知天气代码: ${cw.weathercode} (实时天气)`)
+      }
+      const weatherInfo = info || { description: '未知', icon: '❓' }
       return {
         date: String(cw.time).slice(0, 10),
         temperature: { current: Math.round(cw.temperature), min: 0, max: 0 },
         windSpeed: Math.round(cw.windspeed),
         windDirection: this.getWindDirection(cw.winddirection),
-        description: info.description,
-        icon: info.icon
+        description: weatherInfo.description,
+        icon: weatherInfo.icon
       }
     } catch (e) {
       console.warn('实时天气获取失败', e)
