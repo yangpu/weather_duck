@@ -58,7 +58,7 @@
           <input
             ref="imageInput"
             type="file"
-            accept="image/*"
+            accept="image/*,image/heic,image/heif,.jpg,.jpeg,.png,.gif,.bmp,.webp,.heic,.heif"
             multiple
             style="display: none"
             @change="handleImageSelect"
@@ -168,7 +168,7 @@
       <div v-if="saving" class="save-progress">
         <div class="progress-info">
           <span>{{ saveProgressText }}</span>
-          <span>{{ Math.round(totalProgress) }}%</span>
+          <span>{{ totalProgress.toFixed(1) }}%</span>
         </div>
         <t-progress
           :percentage="totalProgress"
@@ -407,9 +407,10 @@ function handleImageSelect(event: Event) {
 
   for (let i = 0; i < files.length && selectedImages.value.length < 9; i++) {
     const file = files[i]
-    if (!file.type.startsWith('image/')) continue
-    if (file.size > 5 * 1024 * 1024) {
-
+    
+    // 移除所有格式和大小限制，统一上调为100M
+    if (file.size > 100 * 1024 * 1024) {
+      console.warn(`图片 ${file.name} 超过100MB，已跳过`)
       continue
     }
 
@@ -437,9 +438,10 @@ function handleVideoSelect(event: Event) {
 
   for (let i = 0; i < files.length && selectedVideos.value.length < 5; i++) {
     const file = files[i]
-    if (!file.type.startsWith('video/')) continue
-    if (file.size > 50 * 1024 * 1024) {
-
+    
+    // 移除格式限制，统一上调大小限制为100M
+    if (file.size > 100 * 1024 * 1024) {
+      console.warn(`视频 ${file.name} 超过100MB，已跳过`)
       continue
     }
 

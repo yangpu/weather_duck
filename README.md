@@ -55,4 +55,5 @@ npm run preview
 ## 上传腾讯云服务器
 ```bash
 scp -r dist root@175.178.241.26:/root
+scp -r dist root@yangruoji.com:/root
 ```
