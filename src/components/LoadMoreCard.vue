@@ -226,14 +226,14 @@ const previousSubtitleText = computed(() => {
 
 function handleLoadNext() {
   if (!props.loadingNext) {
-    // console.log('LoadMoreCard: 发出loadNext事件', nextDateRange.value)
+
     emit('loadNext', nextDateRange.value.startDate, nextDateRange.value.endDate, nextDateRange.value.isForecast)
   }
 }
 
 function handleLoadPrevious() {
   if (!props.loadingPrevious) {
-    // console.log('LoadMoreCard: 发出loadPrevious事件', previousDateRange.value)
+
     emit('loadPrevious', previousDateRange.value.startDate, previousDateRange.value.endDate)
   }
 }

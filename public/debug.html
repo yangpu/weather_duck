@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>天气小鸭 - 诊断工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        
+        .section {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .section h2 {
+            margin-bottom: 15px;
+            color: #FFD700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .status-item:last-child {
+            border-bottom: none;
+        }
+        
+        .status-label {
+            font-weight: 500;
+        }
+        
+        .status-value {
+            padding: 5px 10px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        
+        .status-success {
+            background: rgba(40, 167, 69, 0.3);
+            color: #28a745;
+        }
+        
+        .status-warning {
+            background: rgba(255, 193, 7, 0.3);
+            color: #ffc107;
+        }
+        
+        .status-error {
+            background: rgba(220, 53, 69, 0.3);
+            color: #dc3545;
+        }
+        
+        .status-info {
+            background: rgba(23, 162, 184, 0.3);
+            color: #17a2b8;
+        }
+        
+        button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .log-area {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .actions {
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🦆 天气小鸭诊断工具</h1>
+        
+        <!-- 基本信息 -->
+        <div class="section">
+            <h2>📋 基本信息</h2>
+            <div class="status-item">
+                <span class="status-label">浏览器</span>
+                <span class="status-value status-info" id="browser-info">检测中...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">当前URL</span>
+                <span class="status-value status-info" id="current-url">检测中...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">安全上下文</span>
+                <span class="status-value" id="secure-context">检测中...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">网络状态</span>
+                <span class="status-value" id="network-status">检测中...</span>
+            </div>
+        </div>
+        
+        <!-- 定位功能检测 -->
+        <div class="section">
+            <h2>📍 定位功能检测</h2>
+            <div class="status-item">
+                <span class="status-label">Geolocation API支持</span>
+                <span class="status-value" id="geolocation-support">检测中...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">定位权限状态</span>
+                <span class="status-value" id="geolocation-permission">检测中...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">当前位置</span>
+                <span class="status-value" id="current-location">未获取</span>
+            </div>
+            <div class="actions">
+                <button onclick="testGeolocation()" id="test-location-btn">🧪 测试定位功能</button>
+                <button onclick="requestLocationPermission()" id="request-permission-btn">🔐 请求定位权限</button>
+            </div>
+        </div>
+        
+        <!-- Service Worker检测 -->
+        <div class="section">
+            <h2>⚙️ Service Worker检测</h2>
+            <div class="status-item">
+                <span class="status-label">Service Worker支持</span>
+                <span class="status-value" id="sw-support">检测中...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">当前SW状态</span>
+                <span class="status-value" id="sw-status">检测中...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">缓存状态</span>
+                <span class="status-value" id="cache-status">检测中...</span>
+            </div>
+            <div class="actions">
+                <button onclick="testServiceWorker()" id="test-sw-btn">🧪 测试Service Worker</button>
+                <button onclick="clearCaches()" id="clear-cache-btn">🗑️ 清除缓存</button>
+                <button onclick="unregisterSW()" id="unregister-sw-btn">❌ 注销SW</button>
+            </div>
+        </div>
+        
+        <!-- 实时日志 -->
+        <div class="section">
+            <h2>📝 实时日志</h2>
+            <div class="log-area" id="log-area">等待日志输出...</div>
+            <div class="actions">
+                <button onclick="clearLogs()">🧹 清除日志</button>
+                <button onclick="exportLogs()">📤 导出日志</button>
+            </div>
+        </div>
+        
+        <!-- 快速操作 -->
+        <div class="section">
+            <h2>🚀 快速操作</h2>
+            <div class="actions">
+                <button onclick="runFullDiagnostic()">🔍 完整诊断</button>
+                <button onclick="testWeatherAPI()">🌤️ 测试天气API</button>
+                <button onclick="window.open('/', '_blank')">🏠 打开主应用</button>
+                <button onclick="location.reload()">🔄 刷新页面</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 日志系统
+        const logArea = document.getElementById('log-area');
+        const logs = [];
+        
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}`;
+            logs.push(logEntry);
+            logArea.textContent = logs.join('\n');
+            logArea.scrollTop = logArea.scrollHeight;
+            console.log(logEntry);
+        }
+        
+        function clearLogs() {
+            logs.length = 0;
+            logArea.textContent = '日志已清除...';
+        }
+        
+        function exportLogs() {
+            const blob = new Blob([logs.join('\n')], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `weather-duck-debug-${new Date().toISOString().slice(0, 19)}.log`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // 基本信息检测
+        function detectBasicInfo() {
+            // 浏览器信息
+            const browserInfo = `${navigator.userAgent.split(' ').slice(-2).join(' ')}`;
+            document.getElementById('browser-info').textContent = browserInfo;
+            
+            // 当前URL
+            document.getElementById('current-url').textContent = location.href;
+            
+            // 安全上下文
+            const isSecure = window.isSecureContext || location.protocol === 'https:' || 
+                           location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+            const secureElement = document.getElementById('secure-context');
+            secureElement.textContent = isSecure ? '✅ 安全' : '❌ 不安全';
+            secureElement.className = `status-value ${isSecure ? 'status-success' : 'status-error'}`;
+            
+            // 网络状态
+            const networkElement = document.getElementById('network-status');
+            networkElement.textContent = navigator.onLine ? '✅ 在线' : '❌ 离线';
+            networkElement.className = `status-value ${navigator.onLine ? 'status-success' : 'status-error'}`;
+            
+            addLog(`基本信息检测完成 - 浏览器: ${browserInfo}, 安全: ${isSecure}, 在线: ${navigator.onLine}`);
+        }
+        
+        // 定位功能检测
+        async function detectGeolocation() {
+            // Geolocation API支持
+            const geoSupported = !!navigator.geolocation;
+            const geoSupportElement = document.getElementById('geolocation-support');
+            geoSupportElement.textContent = geoSupported ? '✅ 支持' : '❌ 不支持';
+            geoSupportElement.className = `status-value ${geoSupported ? 'status-success' : 'status-error'}`;
+            
+            if (!geoSupported) {
+                addLog('浏览器不支持Geolocation API', 'error');
+                return;
+            }
+            
+            // 权限状态
+            if ('permissions' in navigator) {
+                try {
+                    const permission = await navigator.permissions.query({ name: 'geolocation' });
+                    const permissionElement = document.getElementById('geolocation-permission');
+                    const statusMap = {
+                        'granted': { text: '✅ 已授权', class: 'status-success' },
+                        'denied': { text: '❌ 已拒绝', class: 'status-error' },
+                        'prompt': { text: '⏳ 待询问', class: 'status-warning' }
+                    };
+                    const status = statusMap[permission.state] || { text: '❓ 未知', class: 'status-info' };
+                    permissionElement.textContent = status.text;
+                    permissionElement.className = `status-value ${status.class}`;
+                    
+                    addLog(`定位权限状态: ${permission.state}`);
+                } catch (error) {
+                    addLog(`无法查询定位权限: ${error.message}`, 'warning');
+                }
+            } else {
+                addLog('浏览器不支持权限API', 'warning');
+            }
+        }
+        
+        // Service Worker检测
+        async function detectServiceWorker() {
+            // SW支持
+            const swSupported = 'serviceWorker' in navigator;
+            const swSupportElement = document.getElementById('sw-support');
+            swSupportElement.textContent = swSupported ? '✅ 支持' : '❌ 不支持';
+            swSupportElement.className = `status-value ${swSupported ? 'status-success' : 'status-error'}`;
+            
+            if (!swSupported) {
+                addLog('浏览器不支持Service Worker', 'error');
+                return;
+            }
+            
+            // SW状态
+            try {
+                const registration = await navigator.serviceWorker.getRegistration();
+                const swStatusElement = document.getElementById('sw-status');
+                
+                if (registration) {
+                    const sw = registration.active || registration.waiting || registration.installing;
+                    if (sw) {
+                        swStatusElement.textContent = `✅ 已注册 (${sw.state})`;
+                        swStatusElement.className = 'status-value status-success';
+                        addLog(`Service Worker状态: ${sw.state}, URL: ${sw.scriptURL}`);
+                    } else {
+                        swStatusElement.textContent = '⏳ 注册中';
+                        swStatusElement.className = 'status-value status-warning';
+                        addLog('Service Worker正在注册中');
+                    }
+                } else {
+                    swStatusElement.textContent = '❌ 未注册';
+                    swStatusElement.className = 'status-value status-error';
+                    addLog('未找到Service Worker注册');
+                }
+            } catch (error) {
+                addLog(`检查Service Worker失败: ${error.message}`, 'error');
+            }
+            
+            // 缓存状态
+            if ('caches' in window) {
+                try {
+                    const cacheNames = await caches.keys();
+                    const cacheStatusElement = document.getElementById('cache-status');
+                    cacheStatusElement.textContent = `✅ ${cacheNames.length}个缓存`;
+                    cacheStatusElement.className = 'status-value status-success';
+                    addLog(`发现${cacheNames.length}个缓存: ${cacheNames.join(', ')}`);
+                } catch (error) {
+                    addLog(`检查缓存失败: ${error.message}`, 'error');
+                }
+            } else {
+                addLog('浏览器不支持Cache API', 'warning');
+            }
+        }
+        
+        // 测试定位功能
+        async function testGeolocation() {
+            const btn = document.getElementById('test-location-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> 定位中...';
+            
+            addLog('开始测试定位功能...');
+            
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: false,
+                        timeout: 10000,
+                        maximumAge: 60000
+                    });
+                });
+                
+                const { latitude, longitude, accuracy } = position.coords;
+                const locationElement = document.getElementById('current-location');
+                locationElement.textContent = `${latitude.toFixed(4)}, ${longitude.toFixed(4)} (±${Math.round(accuracy)}m)`;
+                locationElement.className = 'status-value status-success';
+                
+                addLog(`定位成功: 纬度=${latitude}, 经度=${longitude}, 精度=±${accuracy}m`);
+            } catch (error) {
+                const locationElement = document.getElementById('current-location');
+                locationElement.textContent = `❌ ${error.message}`;
+                locationElement.className = 'status-value status-error';
+                
+                addLog(`定位失败: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+        
+        // 请求定位权限
+        async function requestLocationPermission() {
+            addLog('请求定位权限...');
+            
+            try {
+                // 直接调用getCurrentPosition来触发权限请求
+                await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: false,
+                        timeout: 5000
+                    });
+                });
+                
+                addLog('定位权限已授权');
+                await detectGeolocation(); // 重新检测权限状态
+            } catch (error) {
+                addLog(`权限请求失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 测试Service Worker
+        async function testServiceWorker() {
+            const btn = document.getElementById('test-sw-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> 测试中...';
+            
+            addLog('开始测试Service Worker...');
+            
+            try {
+                // 尝试注册SW
+                const registration = await navigator.serviceWorker.register('/sw.js');
+                addLog(`Service Worker注册成功: ${registration.scope}`);
+                
+                // 等待SW激活
+                if (registration.installing) {
+                    addLog('等待Service Worker安装...');
+                    await new Promise(resolve => {
+                        registration.installing.addEventListener('statechange', () => {
+                            if (registration.installing.state === 'activated') {
+                                resolve();
+                            }
+                        });
+                    });
+                }
+                
+                addLog('Service Worker测试完成');
+                await detectServiceWorker(); // 重新检测状态
+            } catch (error) {
+                addLog(`Service Worker测试失败: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+        
+        // 清除缓存
+        async function clearCaches() {
+            addLog('开始清除缓存...');
+            
+            try {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+                addLog(`已清除${cacheNames.length}个缓存`);
+                await detectServiceWorker(); // 重新检测状态
+            } catch (error) {
+                addLog(`清除缓存失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 注销Service Worker
+        async function unregisterSW() {
+            addLog('开始注销Service Worker...');
+            
+            try {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (registration) {
+                    await registration.unregister();
+                    addLog('Service Worker已注销');
+                } else {
+                    addLog('没有找到要注销的Service Worker');
+                }
+                await detectServiceWorker(); // 重新检测状态
+            } catch (error) {
+                addLog(`注销Service Worker失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 完整诊断
+        async function runFullDiagnostic() {
+            addLog('=== 开始完整诊断 ===');
+            
+            detectBasicInfo();
+            await detectGeolocation();
+            await detectServiceWorker();
+            
+            addLog('=== 完整诊断结束 ===');
+        }
+        
+        // 测试天气API
+        async function testWeatherAPI() {
+            addLog('测试天气API...');
+            
+            try {
+                // 测试定位
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: false,
+                        timeout: 5000
+                    });
+                });
+                
+                const { latitude, longitude } = position.coords;
+                addLog(`使用位置: ${latitude}, ${longitude}`);
+                
+                // 测试天气API
+                const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min&timezone=auto&start_date=${new Date().toISOString().slice(0, 10)}&end_date=${new Date().toISOString().slice(0, 10)}`;
+                
+                const response = await fetch(weatherUrl);
+                if (response.ok) {
+                    const data = await response.json();
+                    addLog(`天气API测试成功: ${JSON.stringify(data, null, 2)}`);
+                } else {
+                    addLog(`天气API响应错误: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                addLog(`天气API测试失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 页面加载时自动运行基本检测
+        window.addEventListener('load', () => {
+            addLog('诊断工具已加载');
+            runFullDiagnostic();
+        });
+        
+        // 监听网络状态变化
+        window.addEventListener('online', () => {
+            addLog('网络已连接');
+            document.getElementById('network-status').textContent = '✅ 在线';
+            document.getElementById('network-status').className = 'status-value status-success';
+        });
+        
+        window.addEventListener('offline', () => {
+            addLog('网络已断开');
+            document.getElementById('network-status').textContent = '❌ 离线';
+            document.getElementById('network-status').className = 'status-value status-error';
+        });
+    </script>
+</body>
+</html>

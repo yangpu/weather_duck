@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>离线模式测试 - 天气小鸭</title>
+    <link rel="manifest" href="/manifest.json">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .online { background: rgba(76, 175, 80, 0.3); }
+        .offline { background: rgba(244, 67, 54, 0.3); }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .success { border-left: 4px solid #4CAF50; }
+        .error { border-left: 4px solid #f44336; }
+        .warning { border-left: 4px solid #ff9800; }
+        button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            margin: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        .icon-test {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .icon-test img {
+            width: 32px;
+            height: 32px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+        .log {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🦆 天气小鸭 - 离线模式测试</h1>
+        
+        <div id="networkStatus" class="status">
+            检测网络状态中...
+        </div>
+
+        <div class="test-section">
+            <h3>Service Worker 状态</h3>
+            <div id="swStatus" class="test-result">检测中...</div>
+            <button onclick="registerSW()">重新注册 Service Worker</button>
+            <button onclick="unregisterSW()">注销 Service Worker</button>
+        </div>
+
+        <div class="test-section">
+            <h3>静态资源测试</h3>
+            <div class="icon-test">
+                <img id="iconTest" src="/icons/icon.svg" alt="图标测试" onerror="handleIconError(this)">
+                <span id="iconStatus">加载中...</span>
+            </div>
+            <div class="icon-test">
+                <img id="faviconTest" src="/favicon.svg" alt="Favicon测试" onerror="handleFaviconError(this)">
+                <span id="faviconStatus">加载中...</span>
+            </div>
+            <button onclick="testStaticResources()">重新测试静态资源</button>
+        </div>
+
+        <div class="test-section">
+            <h3>缓存状态</h3>
+            <div id="cacheStatus" class="test-result">检测中...</div>
+            <button onclick="checkCaches()">检查缓存</button>
+            <button onclick="clearCaches()">清除缓存</button>
+        </div>
+
+        <div class="test-section">
+            <h3>操作日志</h3>
+            <div id="log" class="log"></div>
+            <button onclick="clearLog()">清除日志</button>
+        </div>
+
+        <div class="test-section">
+            <h3>测试操作</h3>
+            <button onclick="simulateOffline()">模拟离线模式</button>
+            <button onclick="testManifest()">测试 Manifest</button>
+            <button onclick="window.location.reload()">刷新页面</button>
+            <button onclick="window.location.href='/'">返回主页</button>
+        </div>
+    </div>
+
+    <script>
+        let logElement;
+
+        function log(message, type = 'info') {
+            if (!logElement) logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+            logElement.textContent += logEntry;
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(logEntry);
+        }
+
+        function clearLog() {
+            if (logElement) logElement.textContent = '';
+        }
+
+        function updateNetworkStatus() {
+            const statusElement = document.getElementById('networkStatus');
+            const isOnline = navigator.onLine;
+            statusElement.textContent = isOnline ? '🟢 在线模式' : '🔴 离线模式';
+            statusElement.className = `status ${isOnline ? 'online' : 'offline'}`;
+            log(`网络状态: ${isOnline ? '在线' : '离线'}`);
+        }
+
+        function handleIconError(img) {
+            document.getElementById('iconStatus').textContent = '❌ 加载失败';
+            log('图标加载失败: /icons/icon.svg', 'error');
+        }
+
+        function handleFaviconError(img) {
+            document.getElementById('faviconStatus').textContent = '❌ 加载失败';
+            log('Favicon加载失败: /favicon.svg', 'error');
+        }
+
+        async function registerSW() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registration = await navigator.serviceWorker.register('/sw.js');
+                    log('Service Worker 注册成功');
+                    updateSWStatus();
+                } catch (error) {
+                    log(`Service Worker 注册失败: ${error.message}`, 'error');
+                }
+            } else {
+                log('浏览器不支持 Service Worker', 'warning');
+            }
+        }
+
+        async function unregisterSW() {
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (let registration of registrations) {
+                    await registration.unregister();
+                }
+                log('Service Worker 已注销');
+                updateSWStatus();
+            }
+        }
+
+        async function updateSWStatus() {
+            const statusElement = document.getElementById('swStatus');
+            if ('serviceWorker' in navigator) {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (registration) {
+                    const state = registration.active ? registration.active.state : '未激活';
+                    statusElement.innerHTML = `✅ 已注册 (状态: ${state})`;
+                    statusElement.className = 'test-result success';
+                } else {
+                    statusElement.innerHTML = '❌ 未注册';
+                    statusElement.className = 'test-result error';
+                }
+            } else {
+                statusElement.innerHTML = '❌ 不支持';
+                statusElement.className = 'test-result error';
+            }
+        }
+
+        function testStaticResources() {
+            // 重新加载图标
+            const iconImg = document.getElementById('iconTest');
+            const faviconImg = document.getElementById('faviconTest');
+            
+            iconImg.src = '/icons/icon.svg?' + Date.now();
+            faviconImg.src = '/favicon.svg?' + Date.now();
+            
+            document.getElementById('iconStatus').textContent = '加载中...';
+            document.getElementById('faviconStatus').textContent = '加载中...';
+            
+            // 检查加载结果
+            setTimeout(() => {
+                if (iconImg.complete && iconImg.naturalWidth > 0) {
+                    document.getElementById('iconStatus').textContent = '✅ 加载成功';
+                    log('图标加载成功: /icons/icon.svg');
+                }
+                if (faviconImg.complete && faviconImg.naturalWidth > 0) {
+                    document.getElementById('faviconStatus').textContent = '✅ 加载成功';
+                    log('Favicon加载成功: /favicon.svg');
+                }
+            }, 1000);
+        }
+
+        async function checkCaches() {
+            const statusElement = document.getElementById('cacheStatus');
+            try {
+                const cacheNames = await caches.keys();
+                log(`发现缓存: ${cacheNames.join(', ')}`);
+                
+                let totalCached = 0;
+                for (const cacheName of cacheNames) {
+                    const cache = await caches.open(cacheName);
+                    const keys = await cache.keys();
+                    totalCached += keys.length;
+                    log(`缓存 ${cacheName}: ${keys.length} 个资源`);
+                }
+                
+                statusElement.innerHTML = `✅ 共 ${cacheNames.length} 个缓存，${totalCached} 个资源`;
+                statusElement.className = 'test-result success';
+            } catch (error) {
+                statusElement.innerHTML = `❌ 检查失败: ${error.message}`;
+                statusElement.className = 'test-result error';
+                log(`缓存检查失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function clearCaches() {
+            try {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+                log('所有缓存已清除');
+                checkCaches();
+            } catch (error) {
+                log(`清除缓存失败: ${error.message}`, 'error');
+            }
+        }
+
+        function simulateOffline() {
+            log('提示: 请在 Chrome DevTools > Network 中设置为 Offline 模式');
+            alert('请在 Chrome DevTools > Network 中设置为 Offline 模式，然后刷新页面测试离线功能');
+        }
+
+        async function testManifest() {
+            try {
+                const response = await fetch('/manifest.json');
+                const manifest = await response.json();
+                log('Manifest 加载成功');
+                log(`应用名称: ${manifest.name}`);
+                log(`图标数量: ${manifest.icons.length}`);
+            } catch (error) {
+                log(`Manifest 加载失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            updateNetworkStatus();
+            updateSWStatus();
+            checkCaches();
+            testStaticResources();
+            
+            // 监听网络状态变化
+            window.addEventListener('online', updateNetworkStatus);
+            window.addEventListener('offline', updateNetworkStatus);
+            
+            log('离线测试页面已加载');
+        });
+    </script>
+</body>
+</html>

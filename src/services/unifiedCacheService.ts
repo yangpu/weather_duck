@@ -1,6 +1,9 @@
 // 统一缓存服务 - 优化天气和日记数据请求
 import { weatherService } from './weatherService'
 import { diaryService } from './diaryService'
+import { offlineDataService } from './offlineDataService'
+import { requestDeduplicator } from './requestDeduplicator'
+import { dateRangeManager } from './dateRangeManager'
 import type { WeatherData } from '../types/weather'
 import type { DiaryData } from '../types/diary'
 import type { UnifiedCacheStats, InitializeDataResult } from '../types/services'
@@ -23,10 +26,10 @@ interface DiaryUpdatedEvent extends CustomEvent {
 
 declare global {
   interface Window {
-    __unifiedCacheService?: UnifiedCacheService
-    __diaryCache?: Map<string, DiaryData>
-    __weatherCache?: Map<string, WeatherData>
-    __weatherList?: WeatherData[]
+    __unifiedCacheService?: any
+    __diaryCache?: any
+    __weatherCache?: any
+    __weatherList?: any
   }
 
   interface WindowEventMap {
@@ -54,52 +57,86 @@ class UnifiedCacheService {
 
   // 统一初始化天气和日记数据
   async initializeData(startDate: string, endDate: string, latitude: number, longitude: number, forceRefresh: boolean = false): Promise<InitializeDataResult> {
-    const cacheKey = `${startDate}-${endDate}-${latitude}-${longitude}`
+    const cacheKey = `unified_init_${startDate}_${endDate}_${latitude}_${longitude}`
 
-    // 如果强制刷新，清除相关的请求Promise
-    if (forceRefresh) {
-      this.requestPromises.delete(cacheKey)
-    }
 
-    // 检查是否已经初始化相同的数据范围
-    if (!forceRefresh &&
-      this.isInitialized &&
-      this.currentDateRange === cacheKey) {
-      return {
-        weatherData: Array.from(this.weatherCache.values()),
-        diariesData: Array.from(this.diaryCache.values())
+
+    // 更新全局日期范围
+    dateRangeManager.setDateRange(startDate, endDate);
+
+    // 使用请求去重机制
+    return await requestDeduplicator.executeRequest(
+      cacheKey,
+      () => this._performInitialization(startDate, endDate, latitude, longitude, cacheKey, forceRefresh),
+      { 
+        forceRefresh,
+        timeout: 30000, // 30秒超时
+        maxRetries: 2   // 最多重试2次
       }
-    }
-
-    // 防止重复请求（除非强制刷新）
-    if (!forceRefresh && this.requestPromises.has(cacheKey)) {
-      return await this.requestPromises.get(cacheKey)!
-    }
-
-    const requestPromise = this._performInitialization(startDate, endDate, latitude, longitude, cacheKey, forceRefresh)
-    this.requestPromises.set(cacheKey, requestPromise)
-
-    try {
-      const result = await requestPromise
-      return result
-    } finally {
-      this.requestPromises.delete(cacheKey)
-    }
+    );
   }
 
   private async _performInitialization(startDate: string, endDate: string, latitude: number, longitude: number, cacheKey: string, forceRefresh: boolean = false): Promise<InitializeDataResult> {
     try {
-      // 优化1: 合并天气请求 - 使用单一的增强天气API替代多次forecast请求
-      const weatherPromise = this._getOptimizedWeatherData(latitude, longitude, startDate, endDate, forceRefresh)
+      // 检查网络状态
+      const isOnline = navigator.onLine
 
-      // 优化2: 统一日记请求 - 一次性获取日期范围内的所有日记
-      const diariesPromise = this._getOptimizedDiariesData(startDate, endDate)
 
-      // 并行执行请求
-      const [weatherData, diariesData] = await Promise.all([
-        weatherPromise,
-        diariesPromise
-      ])
+      let weatherData: WeatherData[] = []
+      let diariesData: DiaryData[] = []
+
+      // 首先尝试获取缓存数据（缓存优先策略）
+      const cachedWeatherData = offlineDataService.getOfflineWeatherData(startDate, endDate)
+      const cachedDiariesData = offlineDataService.getOfflineDiaryData(startDate, endDate)
+      
+      const hasCachedWeather = cachedWeatherData.some(w => !w.isPlaceholder)
+      const hasCachedDiary = cachedDiariesData.length > 0
+      
+
+
+      if (!isOnline) {
+        // 离线模式：只使用缓存数据
+
+        weatherData = cachedWeatherData
+        diariesData = cachedDiariesData
+      } else if ((hasCachedWeather || hasCachedDiary) && !forceRefresh) {
+        // 有缓存且不强制刷新：先返回缓存，后台更新
+
+        weatherData = cachedWeatherData
+        diariesData = cachedDiariesData
+        
+        // 后台更新数据（不等待结果）
+        this.updateDataInBackground(startDate, endDate, latitude, longitude)
+      } else if (isOnline) {
+        // 在线模式：正常请求数据
+        try {
+          // 优化1: 合并天气请求 - 使用单一的增强天气API替代多次forecast请求
+          const weatherPromise = this._getOptimizedWeatherData(latitude, longitude, startDate, endDate, forceRefresh)
+
+          // 优化2: 统一日记请求 - 一次性获取日期范围内的所有日记
+          const diariesPromise = this._getOptimizedDiariesData(startDate, endDate)
+
+          // 并行执行请求
+          const [onlineWeatherData, onlineDiariesData] = await Promise.all([
+            weatherPromise,
+            diariesPromise
+          ])
+
+          weatherData = onlineWeatherData
+          diariesData = onlineDiariesData
+
+          // 缓存到离线服务
+
+          await offlineDataService.cacheWeatherData(weatherData)
+          await offlineDataService.cacheDiaryData(diariesData)
+
+        } catch (error) {
+          console.warn('⚠️ 在线数据获取失败，使用离线缓存:', error)
+          // 在线请求失败，使用缓存数据
+          weatherData = cachedWeatherData
+          diariesData = cachedDiariesData
+        }
+      }
 
       // 更新缓存
       this._updateWeatherCache(weatherData)
@@ -119,68 +156,120 @@ class UnifiedCacheService {
 
     } catch (error) {
       console.error('❌ 统一缓存服务：初始化失败', error)
-      throw error
+      
+      // 最后的兜底：尝试离线数据
+      try {
+
+        const fallbackWeatherData = offlineDataService.getOfflineWeatherData(startDate, endDate)
+        const fallbackDiariesData = offlineDataService.getOfflineDiaryData(startDate, endDate)
+        
+        this._updateWeatherCache(fallbackWeatherData)
+        this._updateDiariesCache(fallbackDiariesData)
+        
+        return { weatherData: fallbackWeatherData, diariesData: fallbackDiariesData }
+      } catch (fallbackError) {
+        console.error('离线数据兜底也失败:', fallbackError)
+        throw error
+      }
     }
   }
 
   // 优化的天气数据获取 - 合并多个forecast请求
   private async _getOptimizedWeatherData(latitude: number, longitude: number, startDate: string, endDate: string, forceRefresh: boolean = false): Promise<WeatherData[]> {
-    try {
-      // 使用增强版天气API，一次性获取历史+当前+预测数据
-      const weatherData = await weatherService.getWeatherForDateRange(
-        latitude,
-        longitude,
-        startDate,
-        endDate,
-        forceRefresh
-      )
-
-      // 如果需要当前天气补充信息，只在今天的数据需要时才请求
-      const today = new Date().toISOString().slice(0, 10)
-      const todayWeather = weatherData.find(w => w.date === today)
-
-      if (todayWeather) {
+    const weatherKey = `weather_${latitude}_${longitude}_${startDate}_${endDate}`;
+    
+    return await requestDeduplicator.executeRequest(
+      weatherKey,
+      async () => {
         try {
-          const currentWeather = await weatherService.getCurrentWeather(latitude, longitude, forceRefresh)
-          if (currentWeather && currentWeather.temperature?.current !== undefined) {
-            // 合并当前天气信息到今天的数据中
-            Object.assign(todayWeather, {
-              temperature: {
-                ...todayWeather.temperature,
-                current: Math.round(currentWeather.temperature.current)
-              },
-              windSpeed: currentWeather.windSpeed ?? todayWeather.windSpeed,
-              windDirection: currentWeather.windDirection ?? todayWeather.windDirection,
-              description: currentWeather.description ?? todayWeather.description,
-              icon: currentWeather.icon ?? todayWeather.icon
-            })
+
+          
+          // 使用增强版天气API，一次性获取历史+当前+预测数据
+          const weatherData = await weatherService.getWeatherForDateRange(
+            latitude,
+            longitude,
+            startDate,
+            endDate,
+            forceRefresh
+          )
+
+
+
+          // 如果需要当前天气补充信息，只在今天的数据需要时才请求
+          const today = new Date().toISOString().slice(0, 10)
+          const todayWeather = weatherData.find(w => w.date === today)
+
+          if (todayWeather) {
+            try {
+              const currentWeatherKey = `current_weather_${latitude}_${longitude}`;
+              const currentWeather = await requestDeduplicator.executeRequest(
+                currentWeatherKey,
+                () => weatherService.getCurrentWeather(latitude, longitude, forceRefresh),
+                { forceRefresh, timeout: 10000 }
+              );
+              
+              if (currentWeather && currentWeather.temperature?.current !== undefined) {
+                // 合并当前天气信息到今天的数据中
+                Object.assign(todayWeather, {
+                  temperature: {
+                    ...todayWeather.temperature,
+                    current: Math.round(currentWeather.temperature.current)
+                  },
+                  windSpeed: currentWeather.windSpeed ?? todayWeather.windSpeed,
+                  windDirection: currentWeather.windDirection ?? todayWeather.windDirection,
+                  description: currentWeather.description ?? todayWeather.description,
+                  icon: currentWeather.icon ?? todayWeather.icon
+                })
+
+              }
+            } catch (error) {
+              console.warn('获取当前天气补充信息失败，使用预测数据:', error)
+            }
           }
+
+          return weatherData
+
         } catch (error) {
-          console.warn('获取当前天气补充信息失败，使用预测数据:', error)
+          console.error('获取优化天气数据失败:', error)
+          throw error
         }
+      },
+      { 
+        forceRefresh,
+        timeout: 25000, // 25秒超时
+        maxRetries: 2
       }
-
-      return weatherData
-
-    } catch (error) {
-      console.error('获取优化天气数据失败:', error)
-      throw error
-    }
+    );
   }
 
   // 优化的日记数据获取 - 统一批量请求
   private async _getOptimizedDiariesData(startDate: string, endDate: string): Promise<DiaryData[]> {
-    try {
-      // 一次性获取日期范围内的所有日记，避免多次单独请求
-      const diariesData = await diaryService.getDiariesByDateRange(startDate, endDate)
+    const diaryKey = `diaries_${startDate}_${endDate}`;
+    
+    return await requestDeduplicator.executeRequest(
+      diaryKey,
+      async () => {
+        try {
 
-      return diariesData
+          
+          // 一次性获取日期范围内的所有日记，避免多次单独请求
+          const diariesData = await diaryService.getDiariesByDateRange(startDate, endDate)
 
-    } catch (error) {
-      console.error('获取优化日记数据失败:', error)
-      // 即使失败也返回空数组，不影响天气数据显示
-      return []
-    }
+
+          return diariesData
+
+        } catch (error) {
+          console.error('获取优化日记数据失败:', error)
+          // 即使失败也返回空数组，不影响天气数据显示
+          return []
+        }
+      },
+      { 
+        forceRefresh: false, // 日记数据通常不需要强制刷新
+        timeout: 15000,     // 15秒超时
+        maxRetries: 2
+      }
+    );
   }
 
   // 更新天气缓存
@@ -192,10 +281,17 @@ class UnifiedCacheService {
   }
 
   // 更新日记缓存
-  private _updateDiariesCache(diariesData: DiaryData[]): void {
+  private _updateDiariesCache(diariesData: DiaryData[] | any): void {
     this.diaryCache.clear()
-    diariesData.forEach(diary => {
-      if (diary.date) {
+    
+    // 确保数据是数组格式
+    const diaries = Array.isArray(diariesData) ? diariesData : 
+                   (diariesData?.data && Array.isArray(diariesData.data)) ? diariesData.data : []
+    
+
+    
+    diaries.forEach((diary: any) => {
+      if (diary && diary.date) {
         this.diaryCache.set(diary.date, diary)
       }
     })
@@ -281,6 +377,93 @@ class UnifiedCacheService {
     }
   }
 
+  // 后台更新数据（不阻塞主流程，不触发UI重新渲染）
+  private async updateDataInBackground(startDate: string, endDate: string, latitude: number, longitude: number): Promise<void> {
+    const backgroundKey = `background_update_${startDate}_${endDate}_${latitude}_${longitude}`;
+    
+    // 使用请求去重确保后台更新不会重复执行
+    try {
+      await requestDeduplicator.executeRequest(
+        backgroundKey,
+        async () => {
+
+          
+          // 后台获取最新数据
+          const [newWeatherData, newDiariesData] = await Promise.all([
+            this._getOptimizedWeatherData(latitude, longitude, startDate, endDate, true),
+            this._getOptimizedDiariesData(startDate, endDate)
+          ])
+          
+          // 缓存新数据到离线服务
+          await offlineDataService.cacheWeatherData(newWeatherData)
+          await offlineDataService.cacheDiaryData(newDiariesData)
+          
+          // 检查数据是否有实质性变化
+          const hasWeatherChanges = this._hasDataChanges(Array.from(this.weatherCache.values()), newWeatherData)
+          const hasDiaryChanges = this._hasDataChanges(Array.from(this.diaryCache.values()), newDiariesData)
+          
+          if (hasWeatherChanges || hasDiaryChanges) {
+
+            
+            // 静默更新内存缓存（不触发重新渲染）
+            this._updateWeatherCache(newWeatherData)
+            this._updateDiariesCache(newDiariesData)
+            this._exposeToGlobal()
+            
+            // 发送静默更新事件，让组件可以选择性地处理
+            window.dispatchEvent(new CustomEvent('unified:data:updated', {
+              detail: { 
+                weatherData: newWeatherData, 
+                diariesData: newDiariesData,
+                hasWeatherChanges,
+                hasDiaryChanges,
+                silent: true // 标记为静默更新
+              }
+            }))
+            
+
+          } else {
+
+          }
+          
+          return { weatherData: newWeatherData, diariesData: newDiariesData };
+        },
+        { 
+          forceRefresh: false, // 后台更新不强制刷新请求去重
+          timeout: 30000,      // 30秒超时
+          maxRetries: 1        // 后台更新失败不重试太多次
+        }
+      );
+    } catch (error) {
+      console.warn('⚠️ 后台更新失败:', error)
+    }
+  }
+
+  // 检查数据是否有实质性变化
+  private _hasDataChanges(oldData: any[], newData: any[]): boolean {
+    if (oldData.length !== newData.length) return true
+    
+    // 简单的数据变化检测
+    for (let i = 0; i < oldData.length; i++) {
+      const oldItem = oldData[i]
+      const newItem = newData[i]
+      
+      if (!oldItem || !newItem) return true
+      if (oldItem.date !== newItem.date) return true
+      
+      // 对于天气数据，检查关键字段
+      if (oldItem.temperature && newItem.temperature) {
+        if (JSON.stringify(oldItem.temperature) !== JSON.stringify(newItem.temperature)) return true
+      }
+      
+      // 对于日记数据，检查内容和心情
+      if (oldItem.content !== newItem.content) return true
+      if (oldItem.mood !== newItem.mood) return true
+    }
+    
+    return false
+  }
+
   // 预加载相邻日期的数据
   async preloadAdjacentData(currentDate: string): Promise<void> {
     const current = new Date(currentDate)
@@ -302,24 +485,33 @@ class UnifiedCacheService {
     this.isInitialized = false
     this.currentDateRange = null
 
+    // 清理请求去重记录
+    requestDeduplicator.clearAll()
+
     // 清理全局引用
     delete window.__unifiedCacheService
     delete window.__diaryCache
     delete window.__weatherCache
     delete window.__weatherList
+    
+
   }
 
   // 获取缓存统计信息
-  getCacheStats(): UnifiedCacheStats {
+  getCacheStats(): UnifiedCacheStats & { requestDeduplicator: any } {
+    const deduplicatorStats = requestDeduplicator.getStats();
+    
     return {
       weatherCacheSize: this.weatherCache.size,
       diaryCacheSize: this.diaryCache.size,
       isInitialized: this.isInitialized,
       currentDateRange: this.currentDateRange,
-      pendingRequests: this.requestPromises.size
+      pendingRequests: this.requestPromises.size,
+      requestDeduplicator: deduplicatorStats
     }
   }
 }
 
+// 创建并导出单例实例
 export const unifiedCacheService = new UnifiedCacheService()
 export default unifiedCacheService

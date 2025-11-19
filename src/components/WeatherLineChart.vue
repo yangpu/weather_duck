@@ -7,7 +7,7 @@ import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
 import * as echarts from 'echarts'
 import type { ECharts as TECharts, EChartsOption, LineSeriesOption, BarSeriesOption } from 'echarts'
 import type { WeatherData } from '../types/weather'
-import { unifiedCacheService } from '../services/unifiedCacheService'
+import { optimizedUnifiedCacheService } from '../services/optimizedUnifiedCacheService'
 import { truncateText } from '../utils/textUtils'
 
 interface Props {
@@ -28,8 +28,7 @@ const emit = defineEmits<Emits>()
 const chartContainer = ref<HTMLDivElement | null>(null)
 let chart: TECharts | null = null
 
-// 自定义tooltip元素
-let customTooltip: HTMLDivElement | null = null
+
 
 // 日记数据
 const diaryMoods = ref<Record<string, string>>({})
@@ -39,7 +38,7 @@ const diaryData = ref<Record<string, any>>({})
 function loadDiaryMoods() {
   try {
     // 优先从统一缓存服务获取数据
-    const diaries = unifiedCacheService.getDiaryData()
+    const diaries = optimizedUnifiedCacheService.getDiaryData()
     const moodMap: Record<string, string> = {}
     const dataMap: Record<string, any> = {}
     
@@ -54,8 +53,7 @@ function loadDiaryMoods() {
     diaryMoods.value = moodMap
     diaryData.value = dataMap
     
-    // console.log('📊 WeatherLineChart: 从统一缓存加载日记数据', {
-    //   diariesCount: diaries.length,
+
     //   moodsCount: Object.keys(moodMap).length
     // })
 
@@ -79,13 +77,72 @@ function getOption(list: WeatherData[]): EChartsOption {
   const curArr = sortedList.map((d) => d.temperature.current)
   const precipArr = sortedList.map((d) => d.precipitation)
   const icons = sortedList.map((d) => d.icon)
+  
+  // 计算温度和降雨量的最大值，用于确定图标位置
+  const allTemps = [...maxArr, ...minArr, ...curArr].filter(t => t !== undefined && t !== null)
+  const maxTemp = Math.max(...allTemps)
+  const maxPrecip = Math.max(...precipArr)
+  
+  // 图标位置：设置在所有数据序列上方，保持合适间距
+  const dataMax = Math.max(maxTemp, maxPrecip)
+  const iconSpacing = Math.max(dataMax * 0.15, 5) // 至少5度的间距
+  const weatherIconY = dataMax + iconSpacing // 天气图标位置
+  const moodIconY = dataMax + iconSpacing * 2 // 心情图标位置（更高）
+  
+  // 为图标序列准备数据 - 基于温度范围计算y值
+  const weatherIconData = sortedList.map((weather, index) => ({
+    value: [index, weatherIconY],
+    symbol: 'circle',
+    symbolSize: 30,
+    weather: weather,
+    itemStyle: {
+      color: 'transparent',
+      borderColor: 'transparent'
+    },
+    label: {
+      show: true,
+      formatter: weather.icon,
+      fontSize: 24,
+      color: '#333',
+      fontWeight: 'bold',
+      position: 'inside'
+    }
+  }))
+  
+  // 心情图标数据 - 只有存在心情数据的日期
+  const moodIconData = sortedList.map((weather, index) => {
+    const mood = diaryMoods.value[weather.date]
+    if (!mood) return null
+    
+    const moodEmoji = getMoodEmoji(mood)
+    if (!moodEmoji) return null
+    
+    return {
+      value: [index, moodIconY],
+      symbol: 'circle',
+      symbolSize: 26,
+      weather: weather,
+      mood: mood,
+      itemStyle: {
+        color: 'transparent',
+        borderColor: 'transparent'
+      },
+      label: {
+        show: true,
+        formatter: moodEmoji,
+        fontSize: 20,
+        color: '#666',
+        position: 'inside'
+      }
+    }
+  }).filter(item => item !== null)
 
   return {
     grid: {
       left: 60,
       right: 60, 
-      top: 100,
-      bottom: 80,
+      top: 60, // 减少顶部空白
+      bottom: 60, // 减少底部空白
       backgroundColor: 'rgba(248, 249, 250, 0.3)',
       borderColor: '#e9ecef',
       borderWidth: 1
@@ -121,12 +178,22 @@ function getOption(list: WeatherData[]): EChartsOption {
         
         result += `<div style="margin-top: 8px; color: #666; font-size: 12px; border-top: 1px solid #eee; padding-top: 6px;">`
 
-        // 温度数据
+        // 温度和降雨量数据，过滤掉图标序列
         params.forEach((param: any) => {
           if (param.seriesName === '降雨量') {
-            result += `${param.marker} ${param.seriesName}: ${param.value} mm<br/>`
-          } else {
-            result += `${param.marker} ${param.seriesName}: ${param.value} °C<br/>`
+            const value = typeof param.value === 'number' ? 
+              Number(param.value).toFixed(param.value % 1 === 0 ? 0 : 1) : param.value
+            result += `${param.marker} ${param.seriesName}: ${value} mm<br/>`
+          } else if (param.seriesName === '天气状态') {
+            //result += `${param.marker} ${param.seriesName}: ${weather.icon} ${weather.description}<br/>`
+          } else if (param.seriesName === '心情状态') {
+            // if (mood) {
+            //   result += `${param.marker} ${param.seriesName}: ${getMoodEmoji(mood)} ${mood}<br/>`
+            // }
+          } else if (param.seriesName.includes('温度')) {
+            const value = typeof param.value === 'number' ? 
+              Number(param.value).toFixed(param.value % 1 === 0 ? 0 : 1) : param.value
+            result += `${param.marker} ${param.seriesName}: ${value} °C<br/>`
           }
         })
         result += `</div>`
@@ -135,7 +202,6 @@ function getOption(list: WeatherData[]): EChartsOption {
         result += `<div style="margin-top: 8px; color: #666; font-size: 12px; border-top: 1px solid #eee; padding-top: 6px;">`
         result += `风力: ${weather.windSpeed}km/h ${weather.windDirection}<br/>`
         result += `云量: ${weather.cloudCover}% · 湿度: ${weather.humidity || 0}%<br/>`
-        // result += `<div style="margin-top: 6px; padding: 4px 8px; background: #f0f9ff; border-radius: 4px; color: #0369a1; font-size: 11px; text-align: center;">💡 点击图表打开 ${date} 日记</div>`
 
         // 日记详细信息
         const diary = diaryData.value[date]
@@ -175,28 +241,30 @@ function getOption(list: WeatherData[]): EChartsOption {
       }
     },
     legend: {
-      data: props.showCurrent === false ? ['最高温度', '最低温度', '降雨量'] : ['最高温度', '最低温度', '当前温度', '降雨量'],
-      bottom: 15,
+      data: props.showCurrent === false 
+        ? ['最高温度', '最低温度', '降雨量', '天气状态', '心情状态'] 
+        : ['最高温度', '最低温度', '当前温度', '降雨量', '天气状态', '心情状态'],
+      bottom: 10,
       left: 'center',
       textStyle: {
-        fontSize: 13,
+        fontSize: 12,
         color: '#495057',
         fontWeight: 500
       },
-      itemGap: 25,
-      itemWidth: 18,
-      itemHeight: 12,
+      itemGap: 20,
+      itemWidth: 16,
+      itemHeight: 10,
       icon: 'roundRect',
       backgroundColor: 'rgba(255, 255, 255, 0.8)',
       borderColor: '#e9ecef',
       borderWidth: 1,
       borderRadius: 6,
-      padding: [8, 16]
+      padding: [6, 12]
     },
     xAxis: {
       type: 'category',
       data: dates,
-      boundaryGap: false,
+      boundaryGap: true, // 在首尾预留间距
       axisLabel: { 
         color: '#495057',
         fontSize: 12,
@@ -222,13 +290,17 @@ function getOption(list: WeatherData[]): EChartsOption {
         type: 'value',
         name: '温度 (°C)',
         position: 'left',
+        min: 0, // 设置坐标原点为0
+        max: moodIconY + iconSpacing, // 为图标留出足够空间
         nameTextStyle: {
           color: '#495057',
           fontSize: 12,
           fontWeight: 600
         },
         axisLabel: {
-          formatter: '{value}°',
+          formatter: function(value: number) {
+            return Number(value).toFixed(value % 1 === 0 ? 0 : 1) + '°'
+          },
           color: '#6c757d',
           fontSize: 11
         },
@@ -256,7 +328,9 @@ function getOption(list: WeatherData[]): EChartsOption {
           fontWeight: 600
         },
         axisLabel: {
-          formatter: '{value}mm',
+          formatter: function(value: number) {
+            return Number(value).toFixed(value % 1 === 0 ? 0 : 1) + 'mm'
+          },
           color: '#6c757d',
           fontSize: 11
         },
@@ -267,7 +341,8 @@ function getOption(list: WeatherData[]): EChartsOption {
             width: 2
           } 
         }
-      }
+      },
+
     ],
     series: [
       {
@@ -431,126 +506,65 @@ function getOption(list: WeatherData[]): EChartsOption {
           }
         },
         yAxisIndex: 1
+      },
+      // 天气图标序列 - 第一行
+      {
+        name: '天气状态',
+        type: 'scatter',
+        data: weatherIconData,
+        yAxisIndex: 0,
+        label: {
+          show: true,
+          position: 'inside'
+        },
+        emphasis: {
+          scale: true,
+          scaleSize: 1.2,
+          label: {
+            fontSize: 28
+          }
+        },
+        tooltip: {
+          formatter: function(params: any) {
+            const weather = params.data.weather
+            return `${weather.icon} ${weather.description}<br/>💡 点击打开 ${weather.date} 天气日记`
+          }
+        }
+      },
+      // 心情图标序列 - 第二行
+      {
+        name: '心情状态',
+        type: 'scatter',
+        data: moodIconData,
+        yAxisIndex: 0,
+        label: {
+          show: true,
+          position: 'inside'
+        },
+        emphasis: {
+          scale: true,
+          scaleSize: 1.2,
+          label: {
+            fontSize: 24
+          }
+        },
+        tooltip: {
+          formatter: function(params: any) {
+            const weather = params.data.weather
+            const mood = params.data.mood
+            const diary = diaryData.value[weather.date]
+            let result = `${getMoodEmoji(mood)} ${mood}`
+            if (diary && diary.content) {
+              const preview = truncateText(diary.content, 10)
+              result += `<br/>"${preview}"`
+            }
+            result += `<br/>💡 点击打开 ${weather.date} 天气日记`
+            return result
+          }
+        }
       }
     ] as (LineSeriesOption | BarSeriesOption)[],
-    // 天气图标和心情图标 - 精确对齐到曲线数据点
-    graphic: [
-      // 天气图标 - 与每个数据点精确对齐
-      ...sortedList.map((weather, index) => {
-        // 计算图表区域内的精确位置
-        const totalPoints = sortedList.length
-        const gridLeft = 60 // 与grid.left保持一致
-        const gridRight = 60 // 与grid.right保持一致
-        const chartWidth = 100 - ((gridLeft + gridRight) / 10) // 转换为百分比
-        
-        let leftPercent: number
-        if (totalPoints === 1) {
-          leftPercent = 50 // 单个数据点居中
-        } else {
-          // 多个数据点时，均匀分布在图表区域内
-          const pointSpacing = chartWidth / (totalPoints - 1)
-          leftPercent = (gridLeft / 10) + (index * pointSpacing)
-        }
-        
-        return {
-          type: 'text',
-          left: `${leftPercent}%`,
-          top: '12%', // 在曲线上方适当位置
-          style: {
-            text: weather.icon,
-            fontSize: 22,
-            fill: '#333',
-            textAlign: 'center',
-            textVerticalAlign: 'middle',
-            textShadowColor: 'rgba(255,255,255,0.9)',
-            textShadowBlur: 3,
-            fontWeight: 'bold'
-          },
-          onclick: () => {
-            emit('cardClick', weather)
-          },
-          cursor: 'pointer',
-          onmouseover: (e: any) => {
-            if (chart) {
-              chart.getZr().setCursorStyle('pointer')
-              showCustomTooltip(e, `${weather.icon} ${weather.description}\n💡 点击打开 ${weather.date} 天气日记`, 'weather')
-            }
-          },
-          onmouseout: () => {
-            if (chart) {
-              chart.getZr().setCursorStyle('default')
-              hideCustomTooltip()
-            }
-          }
-        }
-      }),
-      // 心情图标 - 仅在有心情数据时显示，与对应的天气数据点对齐
-      ...sortedList.map((weather, index) => {
-        const mood = diaryMoods.value[weather.date]
-        if (!mood) {
-          return null
-        }
-        
-        const moodEmoji = getMoodEmoji(mood)
-        if (!moodEmoji) {
-          return null
-        }
-        
-        // 使用与天气图标相同的位置计算逻辑
-        const totalPoints = sortedList.length
-        const gridLeft = 60
-        const gridRight = 60
-        const chartWidth = 100 - ((gridLeft + gridRight) / 10)
-        
-        let leftPercent: number
-        if (totalPoints === 1) {
-          leftPercent = 50
-        } else {
-          const pointSpacing = chartWidth / (totalPoints - 1)
-          leftPercent = (gridLeft / 10) + (index * pointSpacing)
-        }
-        
-        return {
-          type: 'text',
-          left: `${leftPercent}%`,
-          top: '6%', // 在天气图标上方
-          style: {
-            text: moodEmoji,
-            fontSize: 18,
-            fill: '#666',
-            textAlign: 'center',
-            textVerticalAlign: 'middle',
-            textShadowColor: 'rgba(255,255,255,0.9)',
-            textShadowBlur: 2
-          },
-          onclick: () => {
-            emit('cardClick', weather)
-          },
-          cursor: 'pointer',
-          onmouseover: (e: any) => {
-            if (chart) {
-              chart.getZr().setCursorStyle('pointer')
-              const diary = diaryData.value[weather.date]
-              if (diary && diary.mood) {
-                let tooltipText = `${moodEmoji} ${diary.mood}`
-                if (diary.content) {
-                  const preview = truncateText(diary.content, 10)
-                  tooltipText += `\n"${preview}"`
-                }
-                tooltipText += `\n💡 点击打开 ${weather.date} 天气日记`
-                showCustomTooltip(e, tooltipText, 'mood')
-              }
-            }
-          },
-          onmouseout: () => {
-            if (chart) {
-              chart.getZr().setCursorStyle('default')
-              hideCustomTooltip()
-            }
-          }
-        }
-      }).filter((item): item is NonNullable<typeof item> => item !== null)
-    ]
+
   }
 }
 
@@ -571,6 +585,17 @@ async function renderChart() {
   if (!chart) {
     chart = echarts.init(chartContainer.value)
     window.addEventListener('resize', handleResize)
+    
+    // 添加点击事件监听
+    chart.on('click', (params: any) => {
+      // 只处理天气状态和心情状态系列的点击
+      if (params.seriesName === '天气状态' || params.seriesName === '心情状态') {
+        const weather = params.data.weather
+        if (weather) {
+          emit('cardClick', weather)
+        }
+      }
+    })
   }
   
   // 使用 setOption 的 notMerge: true 确保完全重新渲染
@@ -592,110 +617,7 @@ function handleDiaryUpdate(_event: any) {
   }
 }
 
-// 显示自定义tooltip
-function showCustomTooltip(event: any, text: string, _type: 'weather' | 'mood') {
-  if (!chartContainer.value) return
-  
-  // 创建tooltip元素
-  if (!customTooltip) {
-    customTooltip = document.createElement('div')
-    customTooltip.style.cssText = `
-      position: fixed;
-      background: rgba(255, 255, 255, 0.95);
-      color: #495057;
-      border: 1px solid #e9ecef;
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 13px;
-      line-height: 1.4;
-      white-space: pre-line;
-      pointer-events: none;
-      z-index: 9999;
-      max-width: 200px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      backdrop-filter: blur(8px);
-      transition: opacity 0.2s ease;
-    `
-    document.body.appendChild(customTooltip)
-  }
-  
-  // 设置内容和样式
-  customTooltip.textContent = text
-  customTooltip.style.display = 'block'
-  customTooltip.style.opacity = '1'
-  
-  // 获取图表容器的位置信息
-  const containerRect = chartContainer.value.getBoundingClientRect()
-  
-  // 计算鼠标在页面中的绝对位置
-  let mouseX = 0
-  let mouseY = 0
-  
-  // 尝试从不同的事件对象中获取鼠标位置
-  if (event.event && typeof event.event.clientX === 'number') {
-    // ECharts事件对象中的原生事件
-    mouseX = event.event.clientX
-    mouseY = event.event.clientY
-  } else if (typeof event.clientX === 'number') {
-    // 原生鼠标事件
-    mouseX = event.clientX
-    mouseY = event.clientY
-  } else if (typeof event.offsetX === 'number' && typeof event.offsetY === 'number') {
-    // 使用偏移位置计算绝对位置
-    mouseX = containerRect.left + event.offsetX
-    mouseY = containerRect.top + event.offsetY
-  } else {
-    // 默认使用容器中心位置
-    mouseX = containerRect.left + containerRect.width / 2
-    mouseY = containerRect.top + containerRect.height / 2
-  }
-  
-  // 先获取tooltip的尺寸
-  const tooltipRect = customTooltip.getBoundingClientRect()
-  
-  // 计算tooltip的最终位置
-  let finalX = mouseX + 15 // 图标右侧15px
-  let finalY = mouseY - tooltipRect.height - 10 // 图标上方10px
-  
-  // 边界检查和调整
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
-  
-  // 水平位置调整 - 如果右侧空间不够，显示在左侧
-  if (finalX + tooltipRect.width > viewportWidth - 10) {
-    finalX = mouseX - tooltipRect.width - 15 // 图标左侧
-  }
-  
-  // 确保不超出左边界
-  if (finalX < 10) {
-    finalX = 10
-  }
-  
-  // 垂直位置调整 - 如果上方空间不够，显示在下方
-  if (finalY < 10) {
-    finalY = mouseY + 20 // 图标下方
-  }
-  
-  // 确保不超出下边界
-  if (finalY + tooltipRect.height > viewportHeight - 10) {
-    finalY = viewportHeight - tooltipRect.height - 10
-  }
-  
-  customTooltip.style.left = `${finalX}px`
-  customTooltip.style.top = `${finalY}px`
-}
 
-// 隐藏自定义tooltip
-function hideCustomTooltip() {
-  if (customTooltip) {
-    customTooltip.style.opacity = '0'
-    setTimeout(() => {
-      if (customTooltip) {
-        customTooltip.style.display = 'none'
-      }
-    }, 200)
-  }
-}
 
 // 获取心情emoji（用于图表显示）
 function getMoodEmoji(mood: string): string {
@@ -734,11 +656,7 @@ onBeforeUnmount(() => {
   chart?.dispose()
   chart = null
   
-  // 清理自定义tooltip
-  if (customTooltip) {
-    document.body.removeChild(customTooltip)
-    customTooltip = null
-  }
+
 })
 
 watch(

@@ -292,17 +292,31 @@ const globalWeatherList = computed(() => {
   return (window as any).__weatherList || []
 })
 
+function normalizeDate(d: string | undefined | null): string {
+  if (!d) return ''
+  try {
+    return new Date(d).toISOString().slice(0, 10)
+  } catch {
+    const s = String(d).trim().replace(/\//g, '-')
+    return s.includes('T') ? s.split('T')[0] : s
+  }
+}
+
+function getCurrentIndex(): number {
+  if (!props.weather?.date || !globalWeatherList.value.length) return -1
+  const target = normalizeDate(props.weather.date)
+  return globalWeatherList.value.findIndex((w: WeatherData) => normalizeDate(w.date) === target)
+}
+
 // 检查是否有上一天/下一天
 const hasPreviousDay = computed(() => {
-  if (!props.weather?.date || !globalWeatherList.value.length) return false
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
-  return currentIndex > 0
+  const idx = getCurrentIndex()
+  return idx > 0
 })
 
 const hasNextDay = computed(() => {
-  if (!props.weather?.date || !globalWeatherList.value.length) return false
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
-  return currentIndex >= 0 && currentIndex < globalWeatherList.value.length - 1
+  const idx = getCurrentIndex()
+  return idx >= 0 && idx < globalWeatherList.value.length - 1
 })
 
 // 监听对话框打开，加载已有日记
@@ -311,6 +325,20 @@ watch(() => props.visible, async (newVisible) => {
     await loadDiary()
   } else {
     resetForm()
+  }
+})
+
+// 监听 weather 对象变化（日期切换时重新加载）
+watch(() => props.weather, async (newWeather, oldWeather) => {
+  if (props.visible && newWeather?.date && newWeather.date !== oldWeather?.date) {
+    await loadDiary()
+  }
+}, { deep: true })
+
+// 专门监听日期字段变化，确保切换上一天/下一天后及时刷新
+watch(() => props.weather?.date, async (newDate, oldDate) => {
+  if (props.visible && newDate && newDate !== oldDate) {
+    await loadDiary()
   }
 })
 
@@ -341,27 +369,27 @@ async function loadDiary() {
       selectedMood.value = diary.mood || ''
       diaryText.value = diary.content || ''
       
-      // 加载已有的图片
-      if (diary.images && diary.images.length > 0) {
-        selectedImages.value = diary.images.map((url: string, index: number) => ({
-          file: new File([], `image-${index}.jpg`),
-          preview: url,
-          uploading: false,
-          progress: 100,
-          url: url
-        }))
-      }
+      // 加载已有的图片（若无图片则清空，避免残留上一天的预览）
+      selectedImages.value = (diary.images && diary.images.length > 0)
+        ? diary.images.map((url: string, index: number) => ({
+            file: new File([], `image-${index}.jpg`),
+            preview: url,
+            uploading: false,
+            progress: 100,
+            url: url
+          }))
+        : []
       
-      // 加载已有的视频
-      if (diary.videos && diary.videos.length > 0) {
-        selectedVideos.value = diary.videos.map((url: string, index: number) => ({
-          file: new File([], `video-${index}.mp4`),
-          preview: url,
-          uploading: false,
-          progress: 100,
-          url: url
-        }))
-      }
+      // 加载已有的视频（若无视频则清空，避免残留上一天的预览）
+      selectedVideos.value = (diary.videos && diary.videos.length > 0)
+        ? diary.videos.map((url: string, index: number) => ({
+            file: new File([], `video-${index}.mp4`),
+            preview: url,
+            uploading: false,
+            progress: 100,
+            url: url
+          }))
+        : []
     } else {
       resetForm()
     }
@@ -598,8 +626,7 @@ async function handleDelete() {
 
 function handlePreviousDay() {
   if (!hasPreviousDay.value) return
-  
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
+  const currentIndex = getCurrentIndex()
   if (currentIndex > 0) {
     const previousWeather = globalWeatherList.value[currentIndex - 1]
     emit('dateChange', previousWeather.date)
@@ -608,8 +635,7 @@ function handlePreviousDay() {
 
 function handleNextDay() {
   if (!hasNextDay.value) return
-  
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
+  const currentIndex = getCurrentIndex()
   if (currentIndex >= 0 && currentIndex < globalWeatherList.value.length - 1) {
     const nextWeather = globalWeatherList.value[currentIndex + 1]
     emit('dateChange', nextWeather.date)

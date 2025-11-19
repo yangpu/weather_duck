@@ -65,4 +65,9 @@ export class DateUtils {
     
     return dates
   }
+
+  // 获取两个日期之间的所有日期（包含起始和结束日期）
+  static getDatesBetween(startDate: string, endDate: string): string[] {
+    return DateUtils.generateDateRange(startDate, endDate)
+  }
 }

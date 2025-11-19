@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iOS 定位问题诊断 - 天气小鸭</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #ff6b6b, #ffa726);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .content {
+            padding: 30px 20px;
+        }
+        
+        .status-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding: 8px 0;
+        }
+        
+        .status-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .status-label {
+            font-weight: 500;
+            color: #555;
+        }
+        
+        .status-value {
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+        
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            margin: 8px 4px;
+        }
+        
+        .btn:hover {
+            background: #0056b3;
+            transform: translateY(-2px);
+        }
+        
+        .btn-success {
+            background: #28a745;
+        }
+        
+        .btn-success:hover {
+            background: #1e7e34;
+        }
+        
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        
+        .btn-warning:hover {
+            background: #e0a800;
+        }
+        
+        .result-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .result-card.show {
+            display: block;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .solution-card {
+            background: #e8f4fd;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .solution-title {
+            font-weight: 600;
+            color: #0056b3;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .solution-title::before {
+            content: "💡";
+            margin-right: 8px;
+        }
+        
+        .solution-steps {
+            list-style: none;
+            counter-reset: step-counter;
+        }
+        
+        .solution-steps li {
+            counter-increment: step-counter;
+            margin-bottom: 12px;
+            padding-left: 30px;
+            position: relative;
+        }
+        
+        .solution-steps li::before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 0;
+            top: 0;
+            background: #007bff;
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .error-details {
+            background: #fff5f5;
+            border: 1px solid #fed7d7;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            color: #c53030;
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            color: #007bff;
+            text-decoration: none;
+            margin-top: 20px;
+            font-weight: 500;
+        }
+        
+        .back-link::before {
+            content: "←";
+            margin-right: 8px;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🍎 iOS 定位问题诊断</h1>
+            <p>帮助解决 CoreLocation 定位失败问题</p>
+        </div>
+        
+        <div class="content">
+            <div class="status-card">
+                <h3 style="margin-bottom: 16px; color: #333;">系统状态检查</h3>
+                <div class="status-item">
+                    <span class="status-label">设备类型</span>
+                    <span class="status-value status-info" id="deviceType">检测中...</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">浏览器</span>
+                    <span class="status-value status-info" id="browserType">检测中...</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">定位API支持</span>
+                    <span class="status-value" id="geolocationSupport">检测中...</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">HTTPS环境</span>
+                    <span class="status-value" id="httpsStatus">检测中...</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">定位权限</span>
+                    <span class="status-value" id="permissionStatus">检测中...</span>
+                </div>
+            </div>
+            
+            <div style="text-align: center;">
+                <button class="btn btn-success" onclick="testLocation()">🎯 测试定位功能</button>
+                <button class="btn btn-warning" onclick="showSolutions()">💡 查看解决方案</button>
+            </div>
+            
+            <div class="result-card" id="testResult">
+                <div class="loading" id="testLoading">
+                    <div class="spinner"></div>
+                    <p>正在测试定位功能...</p>
+                </div>
+                <div id="testContent" style="display: none;"></div>
+            </div>
+            
+            <div class="solution-card" id="solutionCard" style="display: none;">
+                <div class="solution-title">常见解决方案</div>
+                <ol class="solution-steps">
+                    <li><strong>检查定位服务总开关：</strong>设置 → 隐私与安全性 → 定位服务，确保已开启</li>
+                    <li><strong>检查Safari定位权限：</strong>设置 → 隐私与安全性 → 定位服务 → Safari浏览器，选择"使用App期间"</li>
+                    <li><strong>清除网站数据：</strong>设置 → Safari浏览器 → 高级 → 网站数据，找到并删除相关网站数据</li>
+                    <li><strong>重启定位服务：</strong>关闭定位服务等待10秒后重新开启</li>
+                    <li><strong>网络检查：</strong>确保网络连接正常，尝试切换WiFi/蜂窝网络</li>
+                    <li><strong>GPS信号：</strong>到开阔区域重试，避免室内或高楼密集区域</li>
+                    <li><strong>系统重启：</strong>如果以上都无效，尝试重启设备</li>
+                </ol>
+            </div>
+            
+            <a href="/" class="back-link">返回天气小鸭主页</a>
+        </div>
+    </div>
+
+    <script>
+        // 检测设备和浏览器信息
+        function detectEnvironment() {
+            const ua = navigator.userAgent;
+            const isIOS = /iPad|iPhone|iPod/.test(ua);
+            const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+            const isChrome = /Chrome/.test(ua);
+            const isFirefox = /Firefox/.test(ua);
+            
+            // 设备类型
+            let deviceType = 'Unknown';
+            if (/iPhone/.test(ua)) deviceType = 'iPhone';
+            else if (/iPad/.test(ua)) deviceType = 'iPad';
+            else if (/iPod/.test(ua)) deviceType = 'iPod';
+            else if (/Android/.test(ua)) deviceType = 'Android';
+            else deviceType = 'Desktop';
+            
+            document.getElementById('deviceType').textContent = deviceType;
+            document.getElementById('deviceType').className = `status-value ${isIOS ? 'status-warning' : 'status-info'}`;
+            
+            // 浏览器类型
+            let browserType = 'Unknown';
+            if (isSafari && !isChrome) browserType = 'Safari';
+            else if (isChrome) browserType = 'Chrome';
+            else if (isFirefox) browserType = 'Firefox';
+            
+            document.getElementById('browserType').textContent = browserType;
+            document.getElementById('browserType').className = `status-value ${isSafari ? 'status-warning' : 'status-info'}`;
+            
+            // 定位API支持
+            const hasGeolocation = !!navigator.geolocation;
+            document.getElementById('geolocationSupport').textContent = hasGeolocation ? '支持' : '不支持';
+            document.getElementById('geolocationSupport').className = `status-value ${hasGeolocation ? 'status-success' : 'status-error'}`;
+            
+            // HTTPS状态
+            const isSecure = location.protocol === 'https:' || location.hostname === 'localhost';
+            document.getElementById('httpsStatus').textContent = isSecure ? '安全' : '不安全';
+            document.getElementById('httpsStatus').className = `status-value ${isSecure ? 'status-success' : 'status-error'}`;
+            
+            // 权限状态检查
+            checkPermissionStatus();
+        }
+        
+        async function checkPermissionStatus() {
+            if ('permissions' in navigator) {
+                try {
+                    const result = await navigator.permissions.query({ name: 'geolocation' });
+                    const status = result.state;
+                    let statusText = status;
+                    let statusClass = 'status-info';
+                    
+                    switch (status) {
+                        case 'granted':
+                            statusText = '已授权';
+                            statusClass = 'status-success';
+                            break;
+                        case 'denied':
+                            statusText = '已拒绝';
+                            statusClass = 'status-error';
+                            break;
+                        case 'prompt':
+                            statusText = '未询问';
+                            statusClass = 'status-warning';
+                            break;
+                    }
+                    
+                    document.getElementById('permissionStatus').textContent = statusText;
+                    document.getElementById('permissionStatus').className = `status-value ${statusClass}`;
+                } catch (error) {
+                    document.getElementById('permissionStatus').textContent = '无法检测';
+                    document.getElementById('permissionStatus').className = 'status-value status-warning';
+                }
+            } else {
+                document.getElementById('permissionStatus').textContent = '不支持';
+                document.getElementById('permissionStatus').className = 'status-value status-error';
+            }
+        }
+        
+        function testLocation() {
+            const resultCard = document.getElementById('testResult');
+            const loading = document.getElementById('testLoading');
+            const content = document.getElementById('testContent');
+            
+            resultCard.classList.add('show');
+            loading.style.display = 'block';
+            content.style.display = 'none';
+            
+            const startTime = Date.now();
+            
+            const options = {
+                enableHighAccuracy: true,
+                timeout: 15000,
+                maximumAge: 60000
+            };
+            
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const endTime = Date.now();
+                    const duration = endTime - startTime;
+                    
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                    content.innerHTML = `
+                        <h4 style="color: #28a745; margin-bottom: 16px;">✅ 定位成功！</h4>
+                        <div class="status-item">
+                            <span class="status-label">纬度</span>
+                            <span class="status-value status-success">${position.coords.latitude.toFixed(6)}</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">经度</span>
+                            <span class="status-value status-success">${position.coords.longitude.toFixed(6)}</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">精度</span>
+                            <span class="status-value status-info">${Math.round(position.coords.accuracy)}米</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">耗时</span>
+                            <span class="status-value status-info">${duration}毫秒</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">时间戳</span>
+                            <span class="status-value status-info">${new Date(position.timestamp).toLocaleString()}</span>
+                        </div>
+                        <p style="margin-top: 16px; color: #28a745; font-weight: 500;">
+                            🎉 定位功能正常工作！您可以正常使用天气小鸭的定位功能。
+                        </p>
+                    `;
+                },
+                (error) => {
+                    const endTime = Date.now();
+                    const duration = endTime - startTime;
+                    
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                    
+                    let errorMessage = '';
+                    let errorCode = '';
+                    let solution = '';
+                    
+                    switch (error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMessage = '用户拒绝了定位请求';
+                            errorCode = 'PERMISSION_DENIED';
+                            solution = '请在Safari设置中允许定位权限，或点击地址栏的定位图标允许访问。';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMessage = '位置信息不可用';
+                            errorCode = 'POSITION_UNAVAILABLE';
+                            solution = '请检查定位服务是否开启，或尝试到开阔区域重试。';
+                            break;
+                        case error.TIMEOUT:
+                            errorMessage = '定位请求超时';
+                            errorCode = 'TIMEOUT';
+                            solution = '请检查网络连接和GPS信号，或尝试增加超时时间。';
+                            break;
+                        default:
+                            errorMessage = '未知定位错误';
+                            errorCode = 'UNKNOWN_ERROR';
+                            solution = '请尝试重启浏览器或设备。';
+                    }
+                    
+                    content.innerHTML = `
+                        <h4 style="color: #dc3545; margin-bottom: 16px;">❌ 定位失败</h4>
+                        <div class="status-item">
+                            <span class="status-label">错误类型</span>
+                            <span class="status-value status-error">${errorMessage}</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">错误代码</span>
+                            <span class="status-value status-error">${errorCode}</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">耗时</span>
+                            <span class="status-value status-info">${duration}毫秒</span>
+                        </div>
+                        <div class="error-details">
+                            <strong>详细错误信息：</strong><br>
+                            ${error.message || '无详细信息'}
+                        </div>
+                        <div style="margin-top: 16px; padding: 12px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+                            <strong>💡 建议解决方案：</strong><br>
+                            ${solution}
+                        </div>
+                    `;
+                },
+                options
+            );
+        }
+        
+        function showSolutions() {
+            const solutionCard = document.getElementById('solutionCard');
+            solutionCard.style.display = solutionCard.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        // 页面加载时检测环境
+        document.addEventListener('DOMContentLoaded', detectEnvironment);
+    </script>
+</body>
+</html>

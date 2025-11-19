@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>定位功能测试 - 天气小鸭</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+        }
+        
+        .test-section h3 {
+            margin-top: 0;
+            color: #34495e;
+        }
+        
+        .btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+            transition: background 0.3s;
+        }
+        
+        .btn:hover {
+            background: #2980b9;
+        }
+        
+        .btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+        
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+        }
+        
+        .result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .result.info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        
+        .loading {
+            color: #6c757d;
+            font-style: italic;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: #3498db;
+            text-decoration: none;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 定位功能测试</h1>
+        
+        <div class="test-section">
+            <h3>1. 基础环境检测</h3>
+            <button class="btn" onclick="checkEnvironment()">检测环境</button>
+            <div id="envResult" class="result" style="display: none;"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>2. 原生定位API测试</h3>
+            <button class="btn" onclick="testNativeGeolocation()">测试原生API</button>
+            <div id="nativeResult" class="result" style="display: none;"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>3. LocationHelper 测试</h3>
+            <button class="btn" onclick="testLocationHelper()">测试 LocationHelper</button>
+            <div id="helperResult" class="result" style="display: none;"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>4. 错误处理测试</h3>
+            <button class="btn" onclick="testErrorHandling()">测试错误处理</button>
+            <div id="errorResult" class="result" style="display: none;"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>5. 多次重试测试</h3>
+            <button class="btn" onclick="testMultipleAttempts()">测试多次重试</button>
+            <div id="retryResult" class="result" style="display: none;"></div>
+        </div>
+        
+        <a href="/" class="back-link">← 返回天气小鸭主页</a>
+        <a href="/ios-location-debug.html" class="back-link">🍎 iOS 诊断页面</a>
+    </div>
+
+    <script>
+        function showResult(elementId, content, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.textContent = content;
+            element.className = `result ${type}`;
+            element.style.display = 'block';
+        }
+        
+        function showLoading(elementId) {
+            showResult(elementId, '测试中...', 'info');
+        }
+        
+        function checkEnvironment() {
+            showLoading('envResult');
+            
+            const ua = navigator.userAgent;
+            const isIOS = /iPad|iPhone|iPod/.test(ua);
+            const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+            const hasGeolocation = !!navigator.geolocation;
+            const isSecure = location.protocol === 'https:' || location.hostname === 'localhost';
+            
+            const result = `环境检测结果：
+设备类型: ${isIOS ? 'iOS 设备' : '非iOS设备'}
+浏览器: ${isSafari ? 'Safari' : '其他浏览器'}
+定位API支持: ${hasGeolocation ? '✅ 支持' : '❌ 不支持'}
+安全上下文: ${isSecure ? '✅ HTTPS/Localhost' : '❌ 非安全环境'}
+User Agent: ${ua}`;
+            
+            showResult('envResult', result, hasGeolocation && isSecure ? 'success' : 'error');
+        }
+        
+        function testNativeGeolocation() {
+            showLoading('nativeResult');
+            
+            if (!navigator.geolocation) {
+                showResult('nativeResult', '❌ 浏览器不支持定位API', 'error');
+                return;
+            }
+            
+            const startTime = Date.now();
+            const options = {
+                enableHighAccuracy: true,
+                timeout: 15000,
+                maximumAge: 60000
+            };
+            
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const duration = Date.now() - startTime;
+                    const result = `✅ 原生定位成功！
+纬度: ${position.coords.latitude}
+经度: ${position.coords.longitude}
+精度: ${position.coords.accuracy}m
+耗时: ${duration}ms
+时间戳: ${new Date(position.timestamp).toLocaleString()}`;
+                    showResult('nativeResult', result, 'success');
+                },
+                (error) => {
+                    const duration = Date.now() - startTime;
+                    const result = `❌ 原生定位失败！
+错误代码: ${error.code}
+错误信息: ${error.message}
+耗时: ${duration}ms
+
+错误类型说明:
+1 = PERMISSION_DENIED (权限被拒绝)
+2 = POSITION_UNAVAILABLE (位置不可用)
+3 = TIMEOUT (超时)`;
+                    showResult('nativeResult', result, 'error');
+                },
+                options
+            );
+        }
+        
+        async function testLocationHelper() {
+            showLoading('helperResult');
+            
+            try {
+                // 动态导入 LocationHelper（模拟实际使用）
+                const startTime = Date.now();
+                
+                // 模拟 LocationHelper 的基本逻辑
+                const result = await getCurrentLocationSimulated();
+                const duration = Date.now() - startTime;
+                
+                const output = `✅ LocationHelper 测试成功！
+纬度: ${result.latitude}
+经度: ${result.longitude}
+来源: ${result.source}
+精度: ${result.accuracy || 'N/A'}m
+耗时: ${duration}ms`;
+                
+                showResult('helperResult', output, 'success');
+            } catch (error) {
+                const result = `❌ LocationHelper 测试失败！
+错误信息: ${error.message}
+错误详情: ${JSON.stringify(error, null, 2)}`;
+                showResult('helperResult', result, 'error');
+            }
+        }
+        
+        // 模拟 LocationHelper 的逻辑
+        async function getCurrentLocationSimulated() {
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            
+            // 尝试地理定位
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    const options = {
+                        enableHighAccuracy: isIOS,
+                        timeout: isIOS ? 15000 : 6000,
+                        maximumAge: isIOS ? 60000 : 300000
+                    };
+                    
+                    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+                });
+                
+                return {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    source: 'geolocation',
+                    accuracy: position.coords.accuracy
+                };
+            } catch (geoError) {
+                console.warn('地理定位失败，尝试IP定位...', geoError);
+                
+                // 尝试IP定位
+                try {
+                    const response = await fetch('https://ipinfo.io/json');
+                    const data = await response.json();
+                    
+                    if (data.loc) {
+                        const [lat, lng] = data.loc.split(',').map(parseFloat);
+                        return {
+                            latitude: lat,
+                            longitude: lng,
+                            source: 'ip'
+                        };
+                    }
+                } catch (ipError) {
+                    console.warn('IP定位失败，使用默认位置...', ipError);
+                }
+                
+                // 使用默认位置
+                return {
+                    latitude: 22.5429,
+                    longitude: 114.0596,
+                    source: 'default'
+                };
+            }
+        }
+        
+        function testErrorHandling() {
+            showLoading('errorResult');
+            
+            // 模拟各种错误情况
+            const errors = [
+                { code: 1, message: 'User denied the request for Geolocation.' },
+                { code: 2, message: 'Location information is unavailable.' },
+                { code: 3, message: 'The request to get user location timed out.' },
+                { code: 0, message: 'kCLErrorLocationUnknown: CoreLocation framework reported a failure.' }
+            ];
+            
+            let results = '错误处理测试结果：\n\n';
+            
+            errors.forEach((error, index) => {
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                const isCoreLocationError = error.message.includes('kCLErrorLocationUnknown');
+                
+                let enhancedMessage = '';
+                switch (error.code) {
+                    case 1:
+                        enhancedMessage = isIOS ? 'iOS 定位权限被拒绝' : '定位权限被拒绝';
+                        break;
+                    case 2:
+                        enhancedMessage = isIOS && isCoreLocationError ? 'iOS CoreLocation 服务不可用' : '位置信息不可用';
+                        break;
+                    case 3:
+                        enhancedMessage = isIOS ? 'iOS 定位超时' : '定位超时';
+                        break;
+                    default:
+                        enhancedMessage = isCoreLocationError ? 'iOS CoreLocation 框架错误' : '未知定位错误';
+                }
+                
+                results += `${index + 1}. 错误代码 ${error.code}:\n`;
+                results += `   原始消息: ${error.message}\n`;
+                results += `   增强消息: ${enhancedMessage}\n`;
+                results += `   CoreLocation错误: ${isCoreLocationError ? '是' : '否'}\n\n`;
+            });
+            
+            showResult('errorResult', results, 'info');
+        }
+        
+        async function testMultipleAttempts() {
+            showLoading('retryResult');
+            
+            let results = '多次重试测试结果：\n\n';
+            const maxAttempts = 3;
+            
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                results += `尝试 ${attempt}/${maxAttempts}:\n`;
+                
+                try {
+                    const startTime = Date.now();
+                    const position = await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            reject(new Error('人工超时'));
+                        }, 3000); // 短超时用于测试
+                        
+                        navigator.geolocation.getCurrentPosition(
+                            (pos) => {
+                                clearTimeout(timeout);
+                                resolve(pos);
+                            },
+                            (err) => {
+                                clearTimeout(timeout);
+                                reject(err);
+                            },
+                            {
+                                enableHighAccuracy: false,
+                                timeout: 2000,
+                                maximumAge: 0
+                            }
+                        );
+                    });
+                    
+                    const duration = Date.now() - startTime;
+                    results += `  ✅ 成功 (${duration}ms)\n`;
+                    results += `  位置: ${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}\n\n`;
+                    break; // 成功后退出循环
+                } catch (error) {
+                    const duration = Date.now() - startTime;
+                    results += `  ❌ 失败 (${duration}ms): ${error.message}\n\n`;
+                    
+                    if (attempt < maxAttempts) {
+                        results += `  等待1秒后重试...\n\n`;
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                }
+            }
+            
+            showResult('retryResult', results, 'info');
+        }
+        
+        // 页面加载时自动检测环境
+        window.addEventListener('load', () => {
+            checkEnvironment();
+        });
+    </script>
+</body>
+</html>

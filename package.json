@@ -1,12 +1,13 @@
 {
   "name": "weather-duck",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "scp -r dist root@yangruoji.com:/root"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

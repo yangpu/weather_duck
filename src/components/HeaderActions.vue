@@ -94,7 +94,7 @@ interface Emits {
   (e: 'citySelected', value: string): void
   (e: 'useMyLocation'): void
   (e: 'dateRangeChange', value: [Date, Date] | [string, string]): void
-  (e: 'fetchAll'): void
+  (e: 'fetchAll', forceRefresh: boolean): void
   (e: 'printPage'): void
 }
 
@@ -235,7 +235,7 @@ function onDateRangeChange(val: [Date, Date] | [string, string]) {
 
 // 获取天气
 function fetchAll() {
-  emit('fetchAll')
+  emit('fetchAll', true) // 传递forceRefresh=true，表示强制刷新
 }
 
 // 打印页面

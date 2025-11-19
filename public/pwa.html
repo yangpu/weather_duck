@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>天气小鸭日记 - PWA版</title>
+    <meta name="description" content="记录天气和心情的日记应用">
+    <meta name="theme-color" content="#4A90E2">
+    
+    <!-- PWA 配置 -->
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.svg">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header .subtitle {
+            opacity: 0.8;
+            font-size: 1.1em;
+        }
+        
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .status-card {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .status-item {
+            text-align: center;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+        
+        .status-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        
+        .weather-section {
+            margin: 20px 0;
+        }
+        
+        .weather-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .weather-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .diary-section {
+            margin: 20px 0;
+        }
+        
+        .diary-entry {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+        }
+        
+        .diary-date {
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 8px;
+        }
+        
+        .diary-content {
+            line-height: 1.6;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        
+        button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        .online { color: #4CAF50; }
+        .offline { color: #f44336; }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            opacity: 0.7;
+        }
+        
+        .error {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid rgba(244, 67, 54, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        
+        .success {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid rgba(76, 175, 80, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        
+        .install-prompt {
+            background: rgba(255, 193, 7, 0.2);
+            border: 1px solid rgba(255, 193, 7, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .main-content {
+                padding: 15px;
+            }
+            
+            .card {
+                padding: 20px;
+                margin: 15px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🦆 天气小鸭日记</h1>
+        <p class="subtitle">记录天气与心情的美好时光</p>
+    </div>
+    
+    <div class="main-content">
+        <!-- 状态卡片 -->
+        <div class="card">
+            <div class="status-card">
+                <div class="status-item">
+                    <div class="status-icon" id="networkIcon">🌐</div>
+                    <div>网络状态</div>
+                    <div id="networkStatus">检测中...</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-icon">⚙️</div>
+                    <div>Service Worker</div>
+                    <div id="swStatus">检测中...</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-icon">💾</div>
+                    <div>缓存状态</div>
+                    <div id="cacheStatus">检测中...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 安装提示 -->
+        <div id="installPrompt" class="install-prompt" style="display: none;">
+            <h3>📱 安装应用到桌面</h3>
+            <p>点击下方按钮将天气小鸭安装到您的设备上，享受更好的离线体验！</p>
+            <button id="installButton">安装应用</button>
+            <button onclick="dismissInstallPrompt()">稍后再说</button>
+        </div>
+        
+        <!-- 天气信息 -->
+        <div class="card weather-section">
+            <h2>🌤️ 今日天气</h2>
+            <div id="weatherContent" class="loading">加载天气数据中...</div>
+        </div>
+        
+        <!-- 日记条目 -->
+        <div class="card diary-section">
+            <h2>📝 最近日记</h2>
+            <div id="diaryContent" class="loading">加载日记数据中...</div>
+        </div>
+        
+        <!-- 控制按钮 -->
+        <div class="card">
+            <div class="controls">
+                <button onclick="refreshData()">🔄 刷新数据</button>
+                <button onclick="clearCache()">🗑️ 清除缓存</button>
+                <button onclick="toggleOfflineMode()">📱 离线模式测试</button>
+                <button onclick="showDebugInfo()">🔍 调试信息</button>
+            </div>
+        </div>
+        
+        <!-- 调试信息 -->
+        <div id="debugInfo" class="card" style="display: none;">
+            <h3>🔍 调试信息</h3>
+            <div id="debugContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // PWA 相关变量
+        let deferredPrompt;
+        let isOfflineMode = false;
+        
+        // 初始化应用
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('PWA 应用初始化...');
+            
+            // 注册 Service Worker
+            await registerServiceWorker();
+            
+            // 更新状态
+            updateNetworkStatus();
+            updateServiceWorkerStatus();
+            updateCacheStatus();
+            
+            // 加载数据
+            await loadWeatherData();
+            await loadDiaryData();
+            
+            // 监听网络状态变化
+            window.addEventListener('online', handleOnline);
+            window.addEventListener('offline', handleOffline);
+            
+            // 监听 PWA 安装提示
+            window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+            
+            console.log('PWA 应用初始化完成');
+        });
+        
+        // 注册 Service Worker
+        async function registerServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    // 先清除旧的 Service Worker
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (let registration of registrations) {
+                        await registration.unregister();
+                    }
+                    
+                    // 注册新的 Service Worker
+                    const registration = await navigator.serviceWorker.register('/sw-pwa.js');
+                    console.log('PWA Service Worker 注册成功:', registration.scope);
+                    
+                    // 监听更新
+                    registration.addEventListener('updatefound', () => {
+                        console.log('发现 Service Worker 更新');
+                    });
+                    
+                } catch (error) {
+                    console.error('Service Worker 注册失败:', error);
+                }
+            }
+        }
+        
+        // 更新网络状态
+        function updateNetworkStatus() {
+            const isOnline = navigator.onLine && !isOfflineMode;
+            const statusElement = document.getElementById('networkStatus');
+            const iconElement = document.getElementById('networkIcon');
+            
+            if (isOnline) {
+                statusElement.innerHTML = '<span class="online">在线</span>';
+                iconElement.textContent = '🌐';
+            } else {
+                statusElement.innerHTML = '<span class="offline">离线</span>';
+                iconElement.textContent = '📱';
+            }
+        }
+        
+        // 更新 Service Worker 状态
+        async function updateServiceWorkerStatus() {
+            const statusElement = document.getElementById('swStatus');
+            
+            if ('serviceWorker' in navigator) {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (registration && registration.active) {
+                    statusElement.innerHTML = '<span class="online">已激活</span>';
+                } else {
+                    statusElement.innerHTML = '<span class="offline">未激活</span>';
+                }
+            } else {
+                statusElement.innerHTML = '<span class="offline">不支持</span>';
+            }
+        }
+        
+        // 更新缓存状态
+        async function updateCacheStatus() {
+            const statusElement = document.getElementById('cacheStatus');
+            
+            try {
+                const cacheNames = await caches.keys();
+                let totalItems = 0;
+                
+                for (const cacheName of cacheNames) {
+                    const cache = await caches.open(cacheName);
+                    const keys = await cache.keys();
+                    totalItems += keys.length;
+                }
+                
+                statusElement.innerHTML = `<span class="online">${totalItems} 项</span>`;
+            } catch (error) {
+                statusElement.innerHTML = '<span class="offline">检测失败</span>';
+            }
+        }
+        
+        // 加载天气数据
+        async function loadWeatherData() {
+            const weatherContent = document.getElementById('weatherContent');
+            
+            try {
+                // 模拟天气数据（实际应用中从 API 获取）
+                const weatherData = getLocalWeatherData() || {
+                    temperature: '22°C',
+                    condition: '多云',
+                    humidity: '65%',
+                    windSpeed: '5 km/h'
+                };
+                
+                weatherContent.innerHTML = `
+                    <div class="weather-grid">
+                        <div class="weather-item">
+                            <div>🌡️</div>
+                            <div>温度</div>
+                            <div>${weatherData.temperature}</div>
+                        </div>
+                        <div class="weather-item">
+                            <div>☁️</div>
+                            <div>天气</div>
+                            <div>${weatherData.condition}</div>
+                        </div>
+                        <div class="weather-item">
+                            <div>💧</div>
+                            <div>湿度</div>
+                            <div>${weatherData.humidity}</div>
+                        </div>
+                        <div class="weather-item">
+                            <div>💨</div>
+                            <div>风速</div>
+                            <div>${weatherData.windSpeed}</div>
+                        </div>
+                    </div>
+                `;
+                
+                // 保存到本地存储
+                saveLocalWeatherData(weatherData);
+                
+            } catch (error) {
+                weatherContent.innerHTML = `
+                    <div class="error">
+                        <p>⚠️ 天气数据加载失败</p>
+                        <p>离线模式下显示缓存数据</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // 加载日记数据
+        async function loadDiaryData() {
+            const diaryContent = document.getElementById('diaryContent');
+            
+            try {
+                const diaryEntries = getLocalDiaryData() || [
+                    {
+                        date: '2025-09-30',
+                        content: '今天天气不错，心情也很好。小鸭子在池塘里游泳，看起来很开心。'
+                    },
+                    {
+                        date: '2025-09-29',
+                        content: '下了一点小雨，空气很清新。写代码的时候听着雨声，特别有感觉。'
+                    }
+                ];
+                
+                diaryContent.innerHTML = diaryEntries.map(entry => `
+                    <div class="diary-entry">
+                        <div class="diary-date">📅 ${entry.date}</div>
+                        <div class="diary-content">${entry.content}</div>
+                    </div>
+                `).join('');
+                
+                // 保存到本地存储
+                saveLocalDiaryData(diaryEntries);
+                
+            } catch (error) {
+                diaryContent.innerHTML = `
+                    <div class="error">
+                        <p>⚠️ 日记数据加载失败</p>
+                        <p>离线模式下显示缓存数据</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // 本地存储操作
+        function getLocalWeatherData() {
+            try {
+                return JSON.parse(localStorage.getItem('pwa_weather_data'));
+            } catch {
+                return null;
+            }
+        }
+        
+        function saveLocalWeatherData(data) {
+            localStorage.setItem('pwa_weather_data', JSON.stringify(data));
+        }
+        
+        function getLocalDiaryData() {
+            try {
+                return JSON.parse(localStorage.getItem('pwa_diary_data'));
+            } catch {
+                return null;
+            }
+        }
+        
+        function saveLocalDiaryData(data) {
+            localStorage.setItem('pwa_diary_data', JSON.stringify(data));
+        }
+        
+        // 事件处理
+        function handleOnline() {
+            console.log('网络已连接');
+            updateNetworkStatus();
+            refreshData();
+        }
+        
+        function handleOffline() {
+            console.log('网络已断开');
+            updateNetworkStatus();
+        }
+        
+        function handleInstallPrompt(e) {
+            e.preventDefault();
+            deferredPrompt = e;
+            document.getElementById('installPrompt').style.display = 'block';
+        }
+        
+        // 控制函数
+        async function refreshData() {
+            console.log('刷新数据...');
+            await loadWeatherData();
+            await loadDiaryData();
+            updateCacheStatus();
+            
+            // 显示成功消息
+            showMessage('数据已刷新', 'success');
+        }
+        
+        async function clearCache() {
+            try {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+                localStorage.clear();
+                
+                updateCacheStatus();
+                showMessage('缓存已清除', 'success');
+            } catch (error) {
+                showMessage('清除缓存失败', 'error');
+            }
+        }
+        
+        function toggleOfflineMode() {
+            isOfflineMode = !isOfflineMode;
+            updateNetworkStatus();
+            showMessage(isOfflineMode ? '已切换到离线模式' : '已切换到在线模式', 'success');
+        }
+        
+        function showDebugInfo() {
+            const debugInfo = document.getElementById('debugInfo');
+            const debugContent = document.getElementById('debugContent');
+            
+            debugContent.innerHTML = `
+                <p><strong>用户代理:</strong> ${navigator.userAgent}</p>
+                <p><strong>当前 URL:</strong> ${window.location.href}</p>
+                <p><strong>网络状态:</strong> ${navigator.onLine ? '在线' : '离线'}</p>
+                <p><strong>Service Worker 支持:</strong> ${'serviceWorker' in navigator ? '是' : '否'}</p>
+                <p><strong>缓存 API 支持:</strong> ${'caches' in window ? '是' : '否'}</p>
+                <p><strong>本地存储:</strong> ${localStorage.length} 项</p>
+                <p><strong>时间戳:</strong> ${new Date().toLocaleString()}</p>
+            `;
+            
+            debugInfo.style.display = debugInfo.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        // 安装应用
+        async function installApp() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                console.log('安装结果:', outcome);
+                deferredPrompt = null;
+                document.getElementById('installPrompt').style.display = 'none';
+            }
+        }
+        
+        function dismissInstallPrompt() {
+            document.getElementById('installPrompt').style.display = 'none';
+        }
+        
+        // 显示消息
+        function showMessage(message, type = 'success') {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = type;
+            messageDiv.innerHTML = `<p>${message}</p>`;
+            
+            document.querySelector('.main-content').insertBefore(
+                messageDiv, 
+                document.querySelector('.main-content').firstChild
+            );
+            
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 3000);
+        }
+        
+        // 绑定安装按钮
+        document.getElementById('installButton').addEventListener('click', installApp);
+    </script>
+</body>
+</html>

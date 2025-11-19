@@ -2,79 +2,53 @@ import { createApp } from 'vue'
 import TDesign from 'tdesign-vue-next'
 import 'tdesign-vue-next/es/style/index.css'
 import App from './App.vue'
+import { enhancedOfflineCacheService } from './services/enhancedOfflineCacheService'
+import { optimizedUnifiedCacheService } from './services/optimizedUnifiedCacheService'
+import { offlineDataService } from './services/offlineDataService'
 // import { checkNetworkStatus, requestNotificationPermission } from './utils/pwa.js'
 
 const app = createApp(App)
-
-// 忽略已知的 TDesign 内部 size 额外属性告警（TSelectPanel/TSelectInput）
-app.config.warnHandler = (msg, _instance, trace) => {
-  const text = typeof msg === 'string' ? msg : String(msg)
-  const stack = typeof trace === 'string' ? trace : ''
-  const isExtraneousSize =
-    text.includes('Extraneous non-props attributes') &&
-    text.includes('(size)') &&
-    (stack.includes('TSelectPanel') || stack.includes('TSelectInput') || stack.includes('TSelect'))
-
-  if (isExtraneousSize) {
-    return
-  }
-  console.warn(text + (stack ? `\n${stack}` : ''))
-}
-
 app.use(TDesign)
 
-// 注册 Service Worker
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', async () => {
-    try {
-      // 清理旧版本
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      for (let registration of registrations) {
-        await registration.unregister();
-      }
-      
-      const cacheNames = await caches.keys();
-      for (let cacheName of cacheNames) {
-        await caches.delete(cacheName);
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // 注册新Service Worker
-      const registration = await navigator.serviceWorker.register('/sw-clean.js', {
-        scope: '/',
-        updateViaCache: 'none'
-      });
-      
-      if (registration.waiting) {
-        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-      }
-      
-      registration.addEventListener('updatefound', () => {
-        const newWorker = registration.installing;
-        if (newWorker) {
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'activated') {
-              window.location.reload();
-            }
-          });
-        }
-      });
-      
-    } catch (error) {
-      // 静默处理错误
-    }
-  });
+// 全局错误处理
+app.config.errorHandler = (err, _instance, info) => {
+  console.error('Vue应用错误:', err, info)
 }
 
-// 初始化PWA功能
-if ('Notification' in window && Notification.permission === 'default') {
-  Notification.requestPermission();
+// 全局警告处理
+app.config.warnHandler = (msg, _instance, trace) => {
+  console.warn('Vue应用警告:', msg, trace)
 }
+
+// 暴露服务到全局，便于调试和组件访问
+declare global {
+  interface Window {
+    __enhancedOfflineCacheService: typeof enhancedOfflineCacheService
+    __optimizedUnifiedCacheService: typeof optimizedUnifiedCacheService
+    __offlineDataService: typeof offlineDataService
+    __unifiedCacheService?: any
+    __diaryCache?: any
+    __weatherCache?: any
+    __weatherList?: any
+  }
+}
+
+// 在应用启动时初始化服务
+async function initializeServices() {
+  try {
+    // 暴露服务到全局
+    window.__enhancedOfflineCacheService = enhancedOfflineCacheService
+    window.__optimizedUnifiedCacheService = optimizedUnifiedCacheService
+    window.__offlineDataService = offlineDataService
+    window.__unifiedCacheService = optimizedUnifiedCacheService
+
+
+  } catch (error) {
+    console.error('❌ 服务初始化失败:', error)
+  }
+}
+
+// 初始化服务
+initializeServices()
 
 app.mount('#app')
-
-// 标记应用已挂载完成
-if ((window as any).markLoaded) {
-  (window as any).markLoaded('app');
-}

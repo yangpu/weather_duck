@@ -61,9 +61,9 @@ export default {
         const choiceResult = await this.deferredPrompt.userChoice
         
         if (choiceResult.outcome === 'accepted') {
-          console.log('用户接受了安装')
+
         } else {
-          console.log('用户拒绝了安装')
+
         }
         
         this.deferredPrompt = null

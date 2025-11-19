@@ -5,26 +5,61 @@ import { WeatherApiResponse, WeatherData } from '../types/weather'
 const ARCHIVE_API_URL = 'https://archive-api.open-meteo.com/v1/archive'
 const FORECAST_API_URL = 'https://api.open-meteo.com/v1/forecast'
 
-// 天气代码对应的描述和图标
+// 天气代码对应的描述和图标 - 完整的 Open-Meteo API 天气代码映射
 const weatherCodes: Record<number, { description: string; icon: string }> = {
+  // 晴朗天气
   0: { description: '晴天', icon: '☀️' },
-  1: { description: '多云', icon: '⛅' },
-  2: { description: '阴天', icon: '☁️' },
-  3: { description: '雾', icon: '🌫️' },
+  
+  // 多云天气
+  1: { description: '晴间多云', icon: '🌤️' },
+  2: { description: '多云', icon: '⛅' },
+  3: { description: '阴天', icon: '☁️' },
+  
+  // 雾天
   45: { description: '雾', icon: '🌫️' },
   48: { description: '雾凇', icon: '🌫️' },
-  51: { description: '小雨', icon: '🌦️' },
-  53: { description: '中雨', icon: '🌧️' },
-  55: { description: '大雨', icon: '🌧️' },
+  
+  // 毛毛雨
+  51: { description: '小毛毛雨', icon: '🌦️' },
+  53: { description: '中毛毛雨', icon: '🌦️' },
+  55: { description: '大毛毛雨', icon: '🌧️' },
+  
+  // 冻毛毛雨
+  56: { description: '轻度冻毛毛雨', icon: '🌨️' },
+  57: { description: '重度冻毛毛雨', icon: '🌨️' },
+  
+  // 降雨
   61: { description: '小雨', icon: '🌦️' },
   63: { description: '中雨', icon: '🌧️' },
   65: { description: '大雨', icon: '🌧️' },
+  
+  // 冻雨
+  66: { description: '轻度冻雨', icon: '🌨️' },
+  67: { description: '重度冻雨', icon: '🌨️' },
+  
+  // 降雪
   71: { description: '小雪', icon: '🌨️' },
   73: { description: '中雪', icon: '❄️' },
   75: { description: '大雪', icon: '❄️' },
+  
+  // 雪粒
+  77: { description: '雪粒', icon: '🌨️' },
+  
+  // 阵雨
+  80: { description: '小阵雨', icon: '🌦️' },
+  81: { description: '中阵雨', icon: '🌧️' },
+  82: { description: '大阵雨', icon: '🌧️' },
+  
+  // 阵雪
+  85: { description: '小阵雪', icon: '🌨️' },
+  86: { description: '大阵雪', icon: '❄️' },
+  
+  // 雷暴
   95: { description: '雷雨', icon: '⛈️' },
-  96: { description: '雷阵雨', icon: '⛈️' },
-  99: { description: '强雷阵雨', icon: '⛈️' }
+  
+  // 雷暴伴冰雹
+  96: { description: '雷阵雨伴小冰雹', icon: '⛈️' },
+  99: { description: '雷阵雨伴大冰雹', icon: '⛈️' }
 }
 
 export class WeatherApiService {
@@ -36,6 +71,7 @@ export class WeatherApiService {
   ): Promise<T> {
     // 离线快速失败
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+
       throw new Error('网络不可用，请检查连接后重试')
     }
 
@@ -159,7 +195,11 @@ export class WeatherApiService {
         }
 
         // 数据完整，添加到结果中
-        const info = weatherCodes[wcode] || { description: '未知', icon: '❓' }
+        const info = weatherCodes[wcode]
+        if (!info) {
+          console.warn(`未知天气代码: ${wcode} (日期: ${date})`)
+        }
+        const weatherInfo = info || { description: '未知', icon: '❓' }
         const windDirection = typeof windDirDeg === 'number' ? this.getWindDirection(windDirDeg) : '不详'
 
         result.push({
@@ -174,8 +214,8 @@ export class WeatherApiService {
           windDirection,
           precipitation: Math.round(precip * 100) / 100,
           cloudCover: Math.round(cloud),
-          description: info.description,
-          icon: info.icon
+          description: weatherInfo.description,
+          icon: weatherInfo.icon
         })
       })
 
@@ -218,7 +258,7 @@ export class WeatherApiService {
       const daysFromToday = Math.ceil((maxRequestDate.getTime() - todayObj.getTime()) / (24 * 60 * 60 * 1000))
       // 需要包含今天，所以是daysFromToday + 1
       forecastDays = Math.min(Math.max(daysFromToday + 1, 1), 16)
-      // console.log(`最大请求日期 ${maxRequestDate.toISOString().slice(0, 10)} 距今天 ${today} 有 ${daysFromToday} 天，设置 forecast_days = ${forecastDays}`)
+
     }
     
     // 特别处理：如果请求的都是未来日期，确保forecast_days足够
@@ -227,7 +267,7 @@ export class WeatherApiService {
       const endDaysFromToday = Math.ceil((endDateObj.getTime() - todayObj.getTime()) / (24 * 60 * 60 * 1000))
       // 需要获取到结束日期，所以至少需要endDaysFromToday + 1天的数据
       forecastDays = Math.min(Math.max(endDaysFromToday + 1, startDaysFromToday + 1), 16)
-      // console.log(`请求未来日期范围 ${startDate} 到 ${endDate}，开始日期距今天 ${startDaysFromToday} 天，结束日期距今天 ${endDaysFromToday} 天，设置 forecast_days = ${forecastDays}`)
+
     }
 
     // 构建API参数 - 不能同时使用start_date/end_date和forecast_days/past_days
@@ -244,7 +284,7 @@ export class WeatherApiService {
     }
     params.forecast_days = forecastDays
 
-    // console.log(`Forecast API调用参数:`, params)
+
     const response = await this.makeApiRequest<WeatherApiResponse>(FORECAST_API_URL, params)
 
     const daily = response?.daily
@@ -252,13 +292,13 @@ export class WeatherApiService {
       throw new Error('预报数据格式异常')
     }
 
-    // console.log(`Forecast API返回日期: ${daily.time.join(', ')}，请求范围: ${startDate} 到 ${endDate}`)
+
 
     const result: WeatherData[] = []
     
     // 检查是否有请求范围内的数据
     const availableDatesInRange = daily.time.filter(date => date >= startDate && date <= endDate)
-    // console.log(`请求范围内的可用日期: ${availableDatesInRange.join(', ')}`)
+
     
     if (availableDatesInRange.length === 0) {
       console.warn(`警告: Forecast API没有返回请求范围 ${startDate} 到 ${endDate} 内的任何数据`)
@@ -268,7 +308,7 @@ export class WeatherApiService {
     daily.time.forEach((date, index) => {
       // 只处理在请求日期范围内的数据
       if (date < startDate || date > endDate) {
-        // console.log(`跳过日期 ${date}，不在请求范围内`)
+
         return
       }
 
@@ -288,9 +328,13 @@ export class WeatherApiService {
         return
       }
 
-      // console.log(`处理日期 ${date}，温度: ${tmin}°C - ${tmax}°C`)
 
-      const info = weatherCodes[wcode] || { description: '未知', icon: '❓' }
+
+      const info = weatherCodes[wcode]
+      if (!info) {
+        console.warn(`未知天气代码: ${wcode} (日期: ${date})`)
+      }
+      const weatherInfo = info || { description: '未知', icon: '❓' }
       const windDirection = typeof windDirDeg === 'number' ? this.getWindDirection(windDirDeg) : '不详'
 
       result.push({
@@ -305,12 +349,12 @@ export class WeatherApiService {
         windDirection,
         precipitation: Math.round(precip * 100) / 100,
         cloudCover: Math.round(cloud),
-        description: info.description,
-        icon: info.icon
+        description: weatherInfo.description,
+        icon: weatherInfo.icon
       })
     })
 
-    // console.log(`Forecast API最终返回 ${result.length} 条有效数据`)
+
     return result
   }
 
@@ -321,7 +365,7 @@ export class WeatherApiService {
     startDate: string,
     endDate: string
   ): Promise<WeatherData[]> {
-    // console.log(`获取天气数据: ${startDate} 到 ${endDate}`)
+
     
     const archiveMaxDate = '2025-09-09' // Archive API的最大支持日期
     
@@ -334,14 +378,14 @@ export class WeatherApiService {
         // 只对archive支持的日期范围调用archive接口
         const archiveEndDate = endDate <= archiveMaxDate ? endDate : archiveMaxDate
         
-        // console.log(`调用Archive API获取 ${startDate} 到 ${archiveEndDate} 的数据`)
+
         const archiveResult = await this.getArchiveWeather(
           latitude, longitude, startDate, archiveEndDate
         )
         archiveData = archiveResult.data
         missingDates = archiveResult.missingDates
         
-        // console.log(`Archive数据获取完成，有效数据: ${archiveData.length}条，缺失日期: ${missingDates.length}个`)
+
       }
       
       // 2. 处理超出archive范围的日期（未来日期）
@@ -356,14 +400,14 @@ export class WeatherApiService {
           futureEndDate
         )
         
-        // console.log(`检测到未来日期范围: ${futureDateRange.join(', ')}，将通过Forecast API获取`)
+
         missingDates.push(...futureDateRange)
       }
       
       // 3. 如果有缺失日期，通过forecast接口补缺
       let forecastData: WeatherData[] = []
       if (missingDates.length > 0) {
-        // console.log(`开始补缺缺失日期: ${missingDates.join(', ')}`)
+
         
         // 将连续的缺失日期分组，减少API调用次数
         const dateRanges = this.groupConsecutiveDates(missingDates)
@@ -374,7 +418,7 @@ export class WeatherApiService {
               latitude, longitude, range.start, range.end
             )
             forecastData.push(...rangeData)
-            // console.log(`成功补缺日期范围 ${range.start} 到 ${range.end}，获得 ${rangeData.length} 条数据`)
+
           } catch (error) {
             console.warn(`补缺日期范围 ${range.start} 到 ${range.end} 失败:`, error)
           }
@@ -385,7 +429,7 @@ export class WeatherApiService {
       const allData = [...archiveData, ...forecastData]
       const completeData = this.generateCompleteWeatherData(startDate, endDate, allData)
       
-      // console.log(`最终数据生成完成，总计 ${completeData.length} 条记录`)
+
       return completeData
       
     } catch (error) {
@@ -411,14 +455,18 @@ export class WeatherApiService {
       const cw = response?.current_weather
       if (!cw) return null
       
-      const info = weatherCodes[cw.weathercode] || { description: '未知', icon: '❓' }
+      const info = weatherCodes[cw.weathercode]
+      if (!info) {
+        console.warn(`未知天气代码: ${cw.weathercode} (实时天气)`)
+      }
+      const weatherInfo = info || { description: '未知', icon: '❓' }
       return {
         date: String(cw.time).slice(0, 10),
         temperature: { current: Math.round(cw.temperature), min: 0, max: 0 },
         windSpeed: Math.round(cw.windspeed),
         windDirection: this.getWindDirection(cw.winddirection),
-        description: info.description,
-        icon: info.icon
+        description: weatherInfo.description,
+        icon: weatherInfo.icon
       }
     } catch (e) {
       console.warn('实时天气获取失败', e)
@@ -567,52 +615,24 @@ export class WeatherApiService {
     return '北风'
   }
 
-  // 获取当前位置（增强版，带超时和错误处理）
+  // 获取当前位置（使用增强的LocationHelper）
   static async getCurrentLocation(): Promise<{ latitude: number; longitude: number }> {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error('浏览器不支持定位'))
-        return
+    try {
+      // 动态导入LocationHelper以避免循环依赖
+      const { LocationHelper } = await import('../utils/locationHelper')
+      
+      // 获取位置信息
+      const locationResult = await LocationHelper.getCurrentLocation()
+      
+      return {
+        latitude: locationResult.latitude,
+        longitude: locationResult.longitude
       }
-
-      const options = {
-        enableHighAccuracy: false, // 降低精度要求，提高成功率
-        timeout: 10000, // 10秒超时
-        maximumAge: 300000 // 5分钟内的缓存位置
-      }
-
-      const success = (position: GeolocationPosition) => {
-        const { latitude, longitude, accuracy } = position.coords
-        console.log(`定位成功: ${latitude}, ${longitude}, 精度: ${accuracy}米`)
-        
-        // 检查坐标合理性（中国大致范围）
-        if (latitude < 3 || latitude > 54 || longitude < 73 || longitude > 135) {
-          console.warn('定位坐标超出中国范围，可能定位错误')
-          reject(new Error('定位坐标异常，可能不在中国境内'))
-          return
-        }
-        
-        resolve({ latitude, longitude })
-      }
-
-      const error = (err: GeolocationPositionError) => {
-        let message = '定位失败'
-        switch (err.code) {
-          case err.PERMISSION_DENIED:
-            message = '定位权限被拒绝，请在浏览器设置中允许定位'
-            break
-          case err.POSITION_UNAVAILABLE:
-            message = '定位信息不可用，请检查网络连接'
-            break
-          case err.TIMEOUT:
-            message = '定位超时，请重试'
-            break
-        }
-        console.error('定位错误:', message, err)
-        reject(new Error(message))
-      }
-
-      navigator.geolocation.getCurrentPosition(success, error, options)
-    })
+    } catch (error) {
+      // 最后的兜底方案：直接返回深圳坐标
+      const defaultLocation = { latitude: 22.5429, longitude: 114.0596 }
+      
+      return defaultLocation
+    }
   }
 }

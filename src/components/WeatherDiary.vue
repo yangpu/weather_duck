@@ -148,16 +148,16 @@ const date = computed(() => {
 })
 
 // 监听对话框打开，加载已有日记
-watch(() => props.visible, async (newVisible, oldVisible) => {
-  console.log('🔍 visible 变化:', oldVisible, '->', newVisible, 'weather.date:', props.weather?.date)
+watch(() => props.visible, async (newVisible) => {
+
   
   if (newVisible && props.weather?.date) {
-    console.log('🚀 对话框打开，开始加载日记')
+
     isLoading.value = true
     await loadDiary()
     isLoading.value = false
   } else if (!newVisible) {
-    console.log('对话框关闭，清空数据')
+
     diaryText.value = ''
     imageData.value = ''
     imageList.value = []
@@ -168,9 +168,9 @@ watch(() => props.visible, async (newVisible, oldVisible) => {
 
 // 组件挂载时，如果对话框已经可见，立即加载数据
 onMounted(async () => {
-  console.log('组件挂载，visible:', props.visible, 'weather.date:', props.weather?.date)
+
   if (props.visible && props.weather?.date) {
-    console.log('挂载时立即加载日记')
+
     isLoading.value = true
     await loadDiary()
     isLoading.value = false
@@ -188,10 +188,10 @@ watch(() => props.weather?.date, async (newDate, oldDate) => {
 
 // 从数据库加载日记
 async function loadDiary() {
-  console.log('🔍 loadDiary 被调用，日期:', props.weather?.date)
+
   
   if (!props.weather || !props.weather.date) {
-    console.log('❌ 没有天气数据或日期，清空状态')
+
     clearDiaryState()
     return
   }
@@ -203,27 +203,27 @@ async function loadDiary() {
     
     if (globalCache && globalCache.has(props.weather.date)) {
       diary = globalCache.get(props.weather.date)
-      console.log('📦 从全局缓存获取日记:', diary)
+
     } else {
-      console.log('🚀 从数据库加载日记，日期:', props.weather.date)
+
       diary = await diaryService.getDiaryByDate(props.weather.date)
       
       // 更新全局缓存
       if (globalCache) {
         globalCache.set(props.weather.date, diary)
       }
-      console.log('📦 从数据库获取日记:', diary)
+
     }
     
     if (diary) {
-      console.log('✅ 找到日记，设置内容')
+
       savedContent.value = diary.content || ''
       diaryText.value = diary.content || ''
       imageData.value = diary.images?.[0] || ''
       imageList.value = diary.images || []
       imageDirty.value = false
     } else {
-      console.log('📝 没有找到日记，设置为空状态')
+
       clearDiaryState()
     }
   } catch (e) {
@@ -269,8 +269,8 @@ async function handleSave() {
       }
       
       // 更新统一缓存服务
-      const { unifiedCacheService } = await import('../services/unifiedCacheService')
-      unifiedCacheService.setDiaryData(props.weather.date, null)
+      const { optimizedUnifiedCacheService } = await import('../services/optimizedUnifiedCacheService')
+      optimizedUnifiedCacheService.setDiaryData(props.weather.date, null)
       
       // 更新全局变量缓存（兼容性）
       const diaryCache = (window as any).__diaryCache
@@ -310,8 +310,8 @@ async function handleSave() {
       }
       
       // 更新统一缓存服务
-      const { unifiedCacheService } = await import('../services/unifiedCacheService')
-      unifiedCacheService.setDiaryData(props.weather.date, savedDiary)
+      const { optimizedUnifiedCacheService } = await import('../services/optimizedUnifiedCacheService')
+      optimizedUnifiedCacheService.setDiaryData(props.weather.date, savedDiary)
       
       // 更新全局变量缓存（兼容性）
       const diaryCache = (window as any).__diaryCache
@@ -366,7 +366,7 @@ async function onFilesChange(e: Event) {
         if (HEICConverter.isHEICFormat(file)) {
           try {
             processedFile = await HEICConverter.convertToJPEG(file)
-            console.log(`HEIC文件 ${file.name} 已转换为JPEG`)
+
           } catch (error) {
             console.error(`HEIC转换失败 ${file.name}:`, error)
             continue
@@ -385,12 +385,9 @@ async function onFilesChange(e: Event) {
         newImages.push(result.dataUrl)
         
         // 显示压缩信息
-        const compressionRatio = ((result.originalSize - result.compressedSize) / result.originalSize * 100).toFixed(1)
-        console.log(`图片 ${file.name} 处理完成:`, {
-          原始大小: `${(result.originalSize / 1024 / 1024).toFixed(2)}MB`,
-          压缩后大小: `${(result.compressedSize / 1024 / 1024).toFixed(2)}MB`,
-          压缩率: `${compressionRatio}%`
-        })
+        // 压缩比例计算
+        ;((result.originalSize - result.compressedSize) / result.originalSize * 100).toFixed(1)
+
         
       } catch (error) {
         console.error(`处理图片 ${file.name} 失败:`, error)

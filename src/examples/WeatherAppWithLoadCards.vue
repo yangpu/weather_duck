@@ -136,7 +136,7 @@ async function handleLoadNext(startDate: string, endDate: string, isForecast: bo
   loadingNext.value = true
   
   try {
-    console.log(`🔄 开始加载后7天数据: ${startDate} 至 ${endDate} (预测: ${isForecast})`)
+
     
     // 模拟API请求延迟
     await delay(1500)
@@ -162,8 +162,8 @@ async function handleLoadNext(startDate: string, endDate: string, isForecast: bo
     // 更新当前结束日期
     currentEndDate.value = endDate
     
-    const dataType = isForecast ? '预测' : '历史'
-    console.log(`✅ 成功加载后7天${dataType}数据: ${newWeatherData.length} 条天气数据, ${mockDiaryCount} 条日记`)
+    isForecast ? '预测' : '历史'
+
     
   } catch (error) {
     console.error('❌ 加载后7天数据失败:', error)
@@ -178,7 +178,7 @@ async function handleLoadPrevious(startDate: string, endDate: string) {
   loadingPrevious.value = true
   
   try {
-    console.log(`🔄 开始加载前7天数据: ${startDate} 至 ${endDate}`)
+
     
     // 模拟API请求延迟
     await delay(1200)
@@ -200,7 +200,7 @@ async function handleLoadPrevious(startDate: string, endDate: string) {
     // 更新当前开始日期
     currentStartDate.value = startDate
     
-    console.log(`✅ 成功加载前7天历史数据: ${newWeatherData.length} 条天气数据, ${mockDiaryCount} 条日记`)
+
     
   } catch (error) {
     console.error('❌ 加载前7天数据失败:', error)
@@ -211,8 +211,8 @@ async function handleLoadPrevious(startDate: string, endDate: string) {
 }
 
 // 处理天气卡片点击
-function handleWeatherCardClick(weather: WeatherData) {
-  console.log('点击天气卡片:', weather.date)
+function handleWeatherCardClick(_weather: WeatherData) {
+
   // 这里可以打开天气详情或日记编辑
 }
 </script>

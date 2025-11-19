@@ -212,7 +212,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue'
 import { WeatherData } from '../types/weather'
 import { DateUtils } from '../utils/dateUtils'
 import { SupabaseStorageService } from '../services/supabaseStorage'
@@ -282,28 +282,60 @@ const date = computed(() => {
   return DateUtils.formatFullDate(props.weather.date)
 })
 
-// 获取全局天气数据列表用于导航
-const globalWeatherList = computed(() => {
-  // 优先从全局数据管理器获取
+const weatherListRef = ref<WeatherData[]>([])
+
+// 初始化获取天气列表（带多重回退）
+function hydrateWeatherList() {
   const globalManager = (window as any).__globalDataManager
-  if (globalManager) {
-    return globalManager.getWeatherList() || []
+  if (globalManager && typeof globalManager.getWeatherList === 'function') {
+    const list = globalManager.getWeatherList() || []
+    if (Array.isArray(list) && list.length) {
+      weatherListRef.value = list
+      return
+    }
   }
-  // 兼容性：从全局变量获取
-  return (window as any).__weatherList || []
-})
+  const globalList = (window as any).__weatherList
+  if (Array.isArray(globalList) && globalList.length) {
+    weatherListRef.value = globalList
+    return
+  }
+  const unified = (window as any).__unifiedCacheService
+  if (unified && typeof unified.getWeatherList === 'function') {
+    const list = unified.getWeatherList() || []
+    if (Array.isArray(list) && list.length) {
+      weatherListRef.value = list
+    }
+  }
+}
+
+function normalizeDate(d: string | undefined | null): string {
+  if (!d) return ''
+  try {
+    // 优先使用 ISO 规范化到 YYYY-MM-DD
+    return new Date(d).toISOString().slice(0, 10)
+  } catch {
+    // 兼容常见分隔符
+    const s = String(d).trim().replace(/\//g, '-')
+    // 若包含时间部分，截断到日期
+    return s.includes('T') ? s.split('T')[0] : s
+  }
+}
+
+function getCurrentIndex(): number {
+  if (!props.weather?.date || !weatherListRef.value.length) return -1
+  const target = normalizeDate(props.weather.date)
+  return weatherListRef.value.findIndex((w: WeatherData) => normalizeDate(w.date) === target)
+}
 
 // 检查是否有上一天/下一天
 const hasPreviousDay = computed(() => {
-  if (!props.weather?.date || !globalWeatherList.value.length) return false
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
-  return currentIndex > 0
+  const idx = getCurrentIndex()
+  return idx > 0
 })
 
 const hasNextDay = computed(() => {
-  if (!props.weather?.date || !globalWeatherList.value.length) return false
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
-  return currentIndex >= 0 && currentIndex < globalWeatherList.value.length - 1
+  const idx = getCurrentIndex()
+  return idx >= 0 && idx < weatherListRef.value.length - 1
 })
 
 // 上传配置
@@ -370,27 +402,27 @@ async function loadDiary(forceRefresh = false) {
       selectedMood.value = diary.mood || ''
       diaryText.value = diary.content || ''
       
-      // 加载已有的图片
-      if (diary.images && diary.images.length > 0) {
-        selectedImages.value = diary.images.map((url: string, index: number) => ({
-          file: new File([], `image-${index}.jpg`),
-          preview: url,
-          uploading: false,
-          progress: 100,
-          url: url
-        }))
-      }
+      // 加载已有的图片（若无图片则清空，避免残留上一天的预览）
+      selectedImages.value = (diary.images && diary.images.length > 0)
+        ? diary.images.map((url: string, index: number) => ({
+            file: new File([], `image-${index}.jpg`),
+            preview: url,
+            uploading: false,
+            progress: 100,
+            url: url
+          }))
+        : []
       
-      // 加载已有的视频
-      if (diary.videos && diary.videos.length > 0) {
-        selectedVideos.value = diary.videos.map((url: string, index: number) => ({
-          file: new File([], `video-${index}.mp4`),
-          preview: url,
-          uploading: false,
-          progress: 100,
-          url: url
-        }))
-      }
+      // 加载已有的视频（若无视频则清空，避免残留上一天的预览）
+      selectedVideos.value = (diary.videos && diary.videos.length > 0)
+        ? diary.videos.map((url: string, index: number) => ({
+            file: new File([], `video-${index}.mp4`),
+            preview: url,
+            uploading: false,
+            progress: 100,
+            url: url
+          }))
+        : []
     } else {
       resetForm()
     }
@@ -593,7 +625,7 @@ async function handleSave() {
         savedDiary = null
       } catch (error) {
         // 如果删除失败（可能是因为日记不存在），忽略错误
-        console.log('删除日记时未找到记录，可能已被删除')
+
         savedDiary = null
       }
     } else {
@@ -620,8 +652,8 @@ async function handleSave() {
     }
     
     // 更新统一缓存服务
-    const { unifiedCacheService } = await import('../services/unifiedCacheService')
-    unifiedCacheService.setDiaryData(props.weather.date, savedDiary)
+    const { optimizedUnifiedCacheService } = await import('../services/optimizedUnifiedCacheService')
+    optimizedUnifiedCacheService.setDiaryData(props.weather.date, savedDiary)
     
     // 更新全局变量缓存（兼容性）
     const diaryCache = (window as any).__diaryCache
@@ -687,8 +719,8 @@ async function handleDelete() {
         }
         
         // 更新统一缓存服务
-        const { unifiedCacheService } = await import('../services/unifiedCacheService')
-        unifiedCacheService.setDiaryData(props.weather.date, null)
+        const { optimizedUnifiedCacheService } = await import('../services/optimizedUnifiedCacheService')
+        optimizedUnifiedCacheService.setDiaryData(props.weather.date, null)
         
         // 更新全局变量缓存（兼容性）
         const diaryCache = (window as any).__diaryCache
@@ -721,20 +753,18 @@ async function handleDelete() {
 
 function handlePreviousDay() {
   if (!hasPreviousDay.value) return
-  
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
+  const currentIndex = getCurrentIndex()
   if (currentIndex > 0) {
-    const previousWeather = globalWeatherList.value[currentIndex - 1]
+    const previousWeather = weatherListRef.value[currentIndex - 1]
     emit('dateChange', previousWeather.date)
   }
 }
 
 function handleNextDay() {
   if (!hasNextDay.value) return
-  
-  const currentIndex = globalWeatherList.value.findIndex((w: WeatherData) => w.date === props.weather.date)
-  if (currentIndex >= 0 && currentIndex < globalWeatherList.value.length - 1) {
-    const nextWeather = globalWeatherList.value[currentIndex + 1]
+  const currentIndex = getCurrentIndex()
+  if (currentIndex >= 0 && currentIndex < weatherListRef.value.length - 1) {
+    const nextWeather = weatherListRef.value[currentIndex + 1]
     emit('dateChange', nextWeather.date)
   }
 }
@@ -765,6 +795,28 @@ function handleClose() {
 function handleVisibleChange(value: boolean) {
   emit('update:visible', value)
 }
+
+onMounted(() => {
+  hydrateWeatherList()
+  const onWeatherReady = (e: any) => {
+    const detail = e?.detail || {}
+    const list = detail.weatherData || detail.weatherList || detail.list
+    if (Array.isArray(list) && list.length) {
+      weatherListRef.value = list
+    } else {
+      hydrateWeatherList()
+    }
+  }
+  window.addEventListener('weather:data-ready', onWeatherReady as EventListener)
+  window.addEventListener('weather:list-updated', onWeatherReady as EventListener)
+  window.addEventListener('globalData:weatherReady', onWeatherReady as EventListener)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('weather:data-ready', (null as any))
+  window.removeEventListener('weather:list-updated', (null as any))
+  window.removeEventListener('globalData:weatherReady', (null as any))
+})
 </script>
 
 <style scoped>

@@ -1,6 +1,7 @@
 // 优化的日记服务
 import { supabase } from '../config/supabase'
 import { cacheService } from './cacheService'
+
 import type { DiaryData, DiaryServiceInterface } from '../types/diary'
 
 class DiaryService implements DiaryServiceInterface {
@@ -51,16 +52,23 @@ class DiaryService implements DiaryServiceInterface {
   }
 
   async getDiariesByDateRange(startDate: string, endDate: string, forceRefresh: boolean = false): Promise<DiaryData[]> {
+    // 使用传入的日期范围，不强制使用全局范围
+    // console.log(`🔍 DiaryService: 查询日记数据 ${startDate} 到 ${endDate}`)
+    
     const key = cacheService.generateKey('diaries_range', { startDate, endDate })
     
     if (!forceRefresh && cacheService.has(key)) {
+      // console.log(`📋 DiaryService: 使用缓存数据 ${startDate} 到 ${endDate}`)
       return cacheService.get<DiaryData[]>(key) || []
     }
 
     try {
       if (!supabase) {
+        console.error('❌ DiaryService: Supabase not configured')
         throw new Error('Supabase not configured')
       }
+
+      // console.log(`🌐 DiaryService: 发起网络请求查询日记 ${startDate} 到 ${endDate}`)
 
       const { data, error } = await supabase
         .from('weather_diaries')
@@ -69,9 +77,14 @@ class DiaryService implements DiaryServiceInterface {
         .lte('date', endDate)
         .order('date', { ascending: true })
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ DiaryService: Supabase查询错误:', error)
+        throw error
+      }
 
       const diaries = data || []
+      // console.log(`✅ DiaryService: 查询到 ${diaries.length} 条日记数据`)
+      
       cacheService.set(key, diaries, this.defaultTTL)
       
       // 同时缓存单个日记
@@ -82,11 +95,15 @@ class DiaryService implements DiaryServiceInterface {
 
       return diaries
     } catch (error) {
-      console.error('获取日期范围日记失败:', error)
+      console.error('❌ DiaryService: 获取日期范围日记失败:', error)
       const cachedData = cacheService.get<DiaryData[]>(key)
-      if (cachedData) {
+      if (cachedData && Array.isArray(cachedData)) {
+
         return cachedData
       }
+      
+      // 如果没有缓存或缓存格式错误，返回空数组
+
       throw error
     }
   }

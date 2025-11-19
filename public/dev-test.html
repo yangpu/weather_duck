@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>开发环境离线测试 - 天气小鸭</title>
+    <link rel="manifest" href="/manifest.json">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .online { background: rgba(76, 175, 80, 0.3); }
+        .offline { background: rgba(244, 67, 54, 0.3); }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .success { border-left: 4px solid #4CAF50; }
+        .error { border-left: 4px solid #f44336; }
+        .warning { border-left: 4px solid #ff9800; }
+        button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            margin: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        .icon-test {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .icon-test img {
+            width: 32px;
+            height: 32px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+        .log {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .alert {
+            background: rgba(255, 193, 7, 0.2);
+            border: 1px solid rgba(255, 193, 7, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🦆 开发环境离线测试</h1>
+        
+        <div class="alert">
+            <strong>⚠️ 重要提示：</strong><br>
+            1. 请先清除所有旧的 Service Worker 和缓存<br>
+            2. 确保访问的是正确的端口 (当前应该是 3001)<br>
+            3. 使用开发环境专用的 Service Worker
+        </div>
+        
+        <div id="networkStatus" class="status">
+            检测网络状态中...
+        </div>
+
+        <div class="test-section">
+            <h3>当前环境信息</h3>
+            <div id="envInfo" class="test-result">
+                <div>当前 URL: <span id="currentUrl"></span></div>
+                <div>端口: <span id="currentPort"></span></div>
+                <div>协议: <span id="currentProtocol"></span></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>Service Worker 管理</h3>
+            <div id="swStatus" class="test-result">检测中...</div>
+            <button onclick="clearAllSW()">清除所有 Service Worker</button>
+            <button onclick="registerDevSW()">注册开发环境 SW</button>
+            <button onclick="registerProdSW()">注册生产环境 SW</button>
+        </div>
+
+        <div class="test-section">
+            <h3>静态资源测试</h3>
+            <div class="icon-test">
+                <img id="iconTest" src="/icons/icon.svg" alt="图标测试" onerror="handleIconError(this)" onload="handleIconLoad(this)">
+                <span id="iconStatus">加载中...</span>
+            </div>
+            <button onclick="testStaticResources()">重新测试静态资源</button>
+        </div>
+
+        <div class="test-section">
+            <h3>操作日志</h3>
+            <div id="log" class="log"></div>
+            <button onclick="clearLog()">清除日志</button>
+        </div>
+
+        <div class="test-section">
+            <h3>测试步骤</h3>
+            <ol style="text-align: left;">
+                <li>点击"清除所有 Service Worker"</li>
+                <li>点击"注册开发环境 SW"</li>
+                <li>等待注册完成</li>
+                <li>在 DevTools Network 中设置为 Offline</li>
+                <li>刷新页面测试</li>
+            </ol>
+            <button onclick="window.location.reload()">刷新页面</button>
+            <button onclick="window.location.href='/'">返回主页</button>
+        </div>
+    </div>
+
+    <script>
+        let logElement;
+
+        function log(message, type = 'info') {
+            if (!logElement) logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+            logElement.textContent += logEntry;
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(logEntry);
+        }
+
+        function clearLog() {
+            if (logElement) logElement.textContent = '';
+        }
+
+        function updateNetworkStatus() {
+            const statusElement = document.getElementById('networkStatus');
+            const isOnline = navigator.onLine;
+            statusElement.textContent = isOnline ? '🟢 在线模式' : '🔴 离线模式';
+            statusElement.className = `status ${isOnline ? 'online' : 'offline'}`;
+            log(`网络状态: ${isOnline ? '在线' : '离线'}`);
+        }
+
+        function updateEnvInfo() {
+            document.getElementById('currentUrl').textContent = window.location.href;
+            document.getElementById('currentPort').textContent = window.location.port || '默认端口';
+            document.getElementById('currentProtocol').textContent = window.location.protocol;
+        }
+
+        function handleIconError(img) {
+            document.getElementById('iconStatus').textContent = '❌ 加载失败';
+            log('图标加载失败: /icons/icon.svg', 'error');
+        }
+
+        function handleIconLoad(img) {
+            document.getElementById('iconStatus').textContent = '✅ 加载成功';
+            log('图标加载成功: /icons/icon.svg');
+        }
+
+        async function clearAllSW() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    log(`发现 ${registrations.length} 个 Service Worker`);
+                    
+                    for (let registration of registrations) {
+                        await registration.unregister();
+                        log(`已注销 Service Worker: ${registration.scope}`);
+                    }
+                    
+                    // 清除缓存
+                    const cacheNames = await caches.keys();
+                    for (const cacheName of cacheNames) {
+                        await caches.delete(cacheName);
+                        log(`已删除缓存: ${cacheName}`);
+                    }
+                    
+                    log('所有 Service Worker 和缓存已清除');
+                    updateSWStatus();
+                } catch (error) {
+                    log(`清除失败: ${error.message}`, 'error');
+                }
+            }
+        }
+
+        async function registerDevSW() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registration = await navigator.serviceWorker.register('/sw-dev.js');
+                    log('开发环境 Service Worker 注册成功');
+                    
+                    // 等待激活
+                    if (registration.installing) {
+                        registration.installing.addEventListener('statechange', function() {
+                            if (this.state === 'activated') {
+                                log('开发环境 Service Worker 已激活');
+                                updateSWStatus();
+                            }
+                        });
+                    } else {
+                        updateSWStatus();
+                    }
+                } catch (error) {
+                    log(`开发环境 Service Worker 注册失败: ${error.message}`, 'error');
+                }
+            }
+        }
+
+        async function registerProdSW() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registration = await navigator.serviceWorker.register('/sw.js');
+                    log('生产环境 Service Worker 注册成功');
+                    updateSWStatus();
+                } catch (error) {
+                    log(`生产环境 Service Worker 注册失败: ${error.message}`, 'error');
+                }
+            }
+        }
+
+        async function updateSWStatus() {
+            const statusElement = document.getElementById('swStatus');
+            if ('serviceWorker' in navigator) {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (registration) {
+                    const state = registration.active ? registration.active.state : '未激活';
+                    const scriptURL = registration.active ? registration.active.scriptURL : '未知';
+                    const swType = scriptURL.includes('sw-dev.js') ? '开发环境' : '生产环境';
+                    statusElement.innerHTML = `✅ 已注册 ${swType} SW (状态: ${state})`;
+                    statusElement.className = 'test-result success';
+                    log(`Service Worker 状态: ${swType}, ${state}`);
+                } else {
+                    statusElement.innerHTML = '❌ 未注册';
+                    statusElement.className = 'test-result error';
+                }
+            } else {
+                statusElement.innerHTML = '❌ 不支持';
+                statusElement.className = 'test-result error';
+            }
+        }
+
+        function testStaticResources() {
+            const iconImg = document.getElementById('iconTest');
+            iconImg.src = '/icons/icon.svg?' + Date.now();
+            document.getElementById('iconStatus').textContent = '加载中...';
+            log('重新测试静态资源');
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            updateNetworkStatus();
+            updateEnvInfo();
+            updateSWStatus();
+            
+            // 监听网络状态变化
+            window.addEventListener('online', updateNetworkStatus);
+            window.addEventListener('offline', updateNetworkStatus);
+            
+            log('开发环境测试页面已加载');
+            log(`当前访问: ${window.location.href}`);
+        });
+    </script>
+</body>
+</html>
