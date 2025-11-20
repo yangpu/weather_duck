@@ -152,29 +152,58 @@
       if ('serviceWorker' in navigator) {
         const isDevHost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
         const shouldResetSW = isDevHost && location.search.includes('reset-sw');
+        
         const registerSW = async () => {
           try {
             // 仅在本地开发且显式带参数时重置 SW
             if (shouldResetSW) {
+              console.log('[SW] Resetting Service Worker...');
               const registrations = await navigator.serviceWorker.getRegistrations();
               for (const reg of registrations) await reg.unregister();
-              // 给浏览器一点时间清理旧控制器
               await new Promise(r => setTimeout(r, 300));
             }
-            const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-            registration.addEventListener('updatefound', () => {
-              // 可选：显示“有新版本可用”
+            
+            const registration = await navigator.serviceWorker.register('/sw.js', { 
+              scope: '/',
+              updateViaCache: 'none' // 不缓存sw.js，确保总是获取最新版本
             });
+            
+            console.log('[SW] Service Worker registered successfully', registration);
+            
+            // 监听更新
+            registration.addEventListener('updatefound', () => {
+              const newWorker = registration.installing;
+              console.log('[SW] New Service Worker found, installing...');
+              
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.log('[SW] New Service Worker installed, prompting for update');
+                  // 可选：显示"有新版本可用"提示
+                  if (confirm('发现新版本，是否立即更新？')) {
+                    newWorker.postMessage({ type: 'SKIP_WAITING' });
+                    window.location.reload();
+                  }
+                }
+              });
+            });
+            
+            // 监听控制器变化
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+              console.log('[SW] Controller changed, reloading page');
+              window.location.reload();
+            });
+            
           } catch (error) {
-            console.error('Service Worker 注册失败:', error);
+            console.error('[SW] Service Worker registration failed:', error);
           }
         };
 
-        // 提前到 DOMContentLoaded，提升离线可控概率
-        document.addEventListener('DOMContentLoaded', () => {
-          // 离线也不要清理 SW；若已安装的 SW 控制本页，可继续提供离线导航/兜底
+        // 页面加载后立即注册 Service Worker
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', registerSW);
+        } else {
           registerSW();
-        });
+        }
       }
 
       // 增强的数据缓存管理
@@ -298,6 +327,7 @@
       };
 
       let loadingTimeout;
+      let maxLoadingTime = 8000; // 8秒最大加载时间
       let debugInfo = {
         userAgent: navigator.userAgent,
         isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent),
@@ -306,6 +336,12 @@
         isOnline: isOnline,
         timestamp: new Date().toISOString()
       };
+
+      // 设置最大加载超时
+      loadingTimeout = setTimeout(() => {
+        console.warn('[Loading] Timeout reached, forcing hide loading screen');
+        hideLoadingScreen('[TIMEOUT] Max loading time exceeded');
+      }, maxLoadingTime);
 
       // 检查是否所有内容都已加载
       function checkAllLoaded() {
@@ -323,6 +359,13 @@
         if (anyDataLoaded) {
           clearTimeout(loadingTimeout);
           hideLoadingScreen('[INDEX] data loaded (weather/diary)');
+          return;
+        }
+
+        // App加载完成且cache就绪，即使没有数据也显示页面
+        if (loadingStates.app && loadingStates.cache) {
+          clearTimeout(loadingTimeout);
+          hideLoadingScreen('[INDEX] app + cache loaded');
           return;
         }
 
@@ -411,113 +454,7 @@
 
     
 
-    
-    <!-- 离线兜底逻辑（确保在应用入口脚本之前执行） -->
-    <script>
-      (function () {
-        const appEl = document.getElementById('app');
-        const loadingEl = document.getElementById('loading-screen');
-        let loadFailed = false;
-        let mounted = false;
-
-        function hideLoading() {
-          if (!loadingEl) return;
-          loadingEl.classList.add('fade-out');
-          setTimeout(() => loadingEl && loadingEl.remove(), 500);
-        }
-
-        function isAppMounted() {
-          // Vue 挂载后 #app 会有子节点
-          return !!(appEl && appEl.childElementCount > 0);
-        }
-
-        function renderOfflineFallback() {
-          if (!appEl) return;
-          // 防止重复渲染
-          if (appEl.getAttribute('data-offline-rendered') === '1') return;
-          appEl.setAttribute('data-offline-rendered', '1');
-
-          appEl.innerHTML = `
-            <div style="
-              min-height: 100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:#fff; text-align:center; padding:24px;
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            ">
-              <div style="font-size:64px; margin-bottom:12px;">🦆</div>
-              <h1 style="margin:0 0 8px 0; font-weight:600;">天气小鸭 · 离线模式</h1>
-              <p style="opacity:.9; margin:0 0 16px 0;">当前网络不可用，已进入离线模式。</p>
-              <div style="background: rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); padding:12px 16px; border-radius:12px; margin-bottom:16px;">
-                <div>· 你仍可浏览已缓存的数据与图片（若有）</div>
-                <div>· 网络恢复后将自动同步最新内容</div>
-              </div>
-              <div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
-                <button onclick="location.reload()" style="
-                  background: rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.35); color:#fff;
-                  padding:10px 16px; border-radius:8px; cursor:pointer;
-                ">重新加载</button>
-                <button onclick="(function(){ if(navigator.onLine){ alert('网络已连接，正在刷新'); location.reload(); } else { alert('仍处于离线状态'); } })()" style="
-                  background: rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.35); color:#fff;
-                  padding:10px 16px; border-radius:8px; cursor:pointer;
-                ">检查网络</button>
-              </div>
-              <div style="margin-top:16px; font-size:12px; opacity:.85;">
-                开发环境断网时，Vite 的模块请求会失败属正常。
-              </div>
-            </div>
-          `;
-          hideLoading();
-        }
-
-        // 1) 监听离线事件：若已离线且未挂载，渲染兜底
-        window.addEventListener('offline', () => {
-          if (!isAppMounted()) renderOfflineFallback();
-        });
-
-        // 2) 捕获入口脚本加载失败（包括 @vite/client、/src/main.ts）
-        window.addEventListener('error', (e) => {
-          const target = e && e.target;
-          // 仅处理 <script> 资源错误
-          if (target && target.tagName === 'SCRIPT') {
-            const src = target.getAttribute('src') || '';
-            if (src.includes('/@vite/') || src.includes('/src/') || src.includes('client')) {
-              loadFailed = true;
-              // 稍等片刻以确认未挂载后给出兜底
-              setTimeout(() => { if (!isAppMounted()) renderOfflineFallback(); }, 200);
-            }
-          }
-        }, true);
-
-        // 3) 捕获动态模块加载错误（TypeError: Failed to fetch dynamically imported module）
-        window.addEventListener('unhandledrejection', (e) => {
-          const msg = String((e && e.reason && (e.reason.message || e.reason)) || '');
-          if (/Failed to fetch dynamically imported module|ERR_INTERNET_DISCONNECTED/i.test(msg)) {
-            loadFailed = true;
-            setTimeout(() => { if (!isAppMounted()) renderOfflineFallback(); }, 200);
-          }
-        });
-
-        // 4) DOMContentLoaded 后设置一个短超时：未挂载且离线/失败则兜底
-        document.addEventListener('DOMContentLoaded', () => {
-          setTimeout(() => {
-            mounted = isAppMounted();
-            if (!mounted && (!navigator.onLine || loadFailed)) {
-              renderOfflineFallback();
-            }
-          }, 1200);
-        });
-
-        // 5) 最后保险：页面 load 后再查一次
-        window.addEventListener('load', () => {
-          setTimeout(() => {
-            if (!isAppMounted() && (!navigator.onLine || loadFailed)) {
-              renderOfflineFallback();
-            }
-          }, 1500);
-        });
-      })();
-    </script>
-
-    <!-- 然后加载主应用 -->
+    <!-- 加载主应用 -->
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
