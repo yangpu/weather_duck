@@ -93,7 +93,7 @@
               <!-- 上传进度 -->
               <div v-if="image.uploading" class="upload-progress">
                 <t-progress
-                  :percentage="image.progress"
+                  :percentage="image.progress.toFixed"
                   size="small"
                   :show-info="false"
                 />
@@ -154,7 +154,7 @@
               <!-- 上传进度 -->
               <div v-if="video.uploading" class="upload-progress">
                 <t-progress
-                  :percentage="video.progress"
+                  :percentage="video.progress.toFixed(0)"
                   size="small"
                   :show-info="true"
                 />
@@ -168,7 +168,7 @@
       <div v-if="saving" class="save-progress">
         <div class="progress-info">
           <span>{{ saveProgressText }}</span>
-          <span>{{ totalProgress.toFixed(1) }}%</span>
+          <span>{{ totalProgress.toFixed(0) }}%</span>
         </div>
         <t-progress
           :percentage="totalProgress"

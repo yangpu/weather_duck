@@ -7,7 +7,7 @@
     "dev": "vite --host",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "deploy": "scp -r dist root@yangruoji.com:/root",
+    "deploy": "scp -r dist root@yangruoji.com:/root/weather_duck",
     "deploy:full": "./deploy.sh",
     "deploy:quick": "npm run build && rsync -avz --delete dist/ root@yangruoji.com:/yangruoji/weather_duck/"
   },
