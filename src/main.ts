@@ -5,7 +5,10 @@ import App from './App.vue'
 import { enhancedOfflineCacheService } from './services/enhancedOfflineCacheService'
 import { optimizedUnifiedCacheService } from './services/optimizedUnifiedCacheService'
 import { offlineDataService } from './services/offlineDataService'
-// import { checkNetworkStatus, requestNotificationPermission } from './utils/pwa.js'
+import { initPWAInstall } from './utils/pwa'
+
+// 初始化 PWA 安装监听
+initPWAInstall()
 
 const app = createApp(App)
 app.use(TDesign)

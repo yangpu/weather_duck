@@ -14,6 +14,58 @@
         <h2 class="app-title">天气小鸭 · 暑假天气日历</h2>
       </div>
 
+      <!-- PWA 安装区域 -->
+      <div class="pwa-install-section">
+        <div class="install-header">
+          <svg class="install-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+          </svg>
+          <h3 class="section-title">添加到桌面</h3>
+        </div>
+        
+        <!-- 已安装状态 -->
+        <div v-if="browserInfo.isStandalone" class="install-status installed">
+          <svg class="status-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+          </svg>
+          <span>应用已安装到您的设备</span>
+        </div>
+        
+        <!-- 可自动安装 -->
+        <div v-else-if="canInstall" class="install-auto">
+          <p class="install-desc">将天气小鸭添加到桌面，随时随地记录天气与心情</p>
+          <t-button 
+            theme="primary" 
+            size="large" 
+            block 
+            :loading="installing"
+            @click="handleInstall"
+          >
+            <template #icon>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+              </svg>
+            </template>
+            安装应用
+          </t-button>
+        </div>
+        
+        <!-- 手动安装指南 -->
+        <div v-else class="install-guide">
+          <div class="browser-info">
+            <span class="browser-badge">{{ browserInfo.name }}</span>
+            <span v-if="browserInfo.isIOS" class="os-badge">iOS</span>
+            <span v-else-if="browserInfo.isAndroid" class="os-badge">Android</span>
+            <span v-else class="os-badge">桌面版</span>
+          </div>
+          
+          <div class="guide-title">{{ installGuide.title }}</div>
+          <ol class="guide-steps">
+            <li v-for="(step, index) in installGuide.steps" :key="index">{{ step }}</li>
+          </ol>
+        </div>
+      </div>
+
       <!-- 二维码区域 -->
       <div class="qr-section">
         <h3 class="section-title">手机扫码访问</h3>
@@ -68,8 +120,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onMounted, onUnmounted, computed } from 'vue'
 import QRCode from 'qrcode'
+import { 
+  detectBrowser, 
+  getInstallGuide, 
+  installPWA, 
+  canInstallPWA,
+  type BrowserInfo 
+} from '../utils/pwa'
 
 interface Props {
   visible: boolean
@@ -83,12 +142,43 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const qrCanvas = ref<HTMLCanvasElement>()
+const browserInfo = ref<BrowserInfo>(detectBrowser())
+const canInstall = ref(canInstallPWA())
+const installing = ref(false)
+
+// 计算安装指南
+const installGuide = computed(() => getInstallGuide(browserInfo.value))
+
+// 监听 PWA 安装可用事件
+function handleInstallAvailable() {
+  canInstall.value = true
+  browserInfo.value = detectBrowser()
+}
+
+// 监听 PWA 已安装事件
+function handleInstalled() {
+  canInstall.value = false
+  browserInfo.value = detectBrowser()
+}
+
+onMounted(() => {
+  window.addEventListener('pwa-install-available', handleInstallAvailable)
+  window.addEventListener('pwa-installed', handleInstalled)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('pwa-install-available', handleInstallAvailable)
+  window.removeEventListener('pwa-installed', handleInstalled)
+})
 
 // 监听对话框打开，生成二维码
 watch(() => props.visible, async (newVisible) => {
   if (newVisible) {
     await nextTick()
     await generateQRCode()
+    // 刷新浏览器信息
+    browserInfo.value = detectBrowser()
+    canInstall.value = canInstallPWA()
   }
 })
 
@@ -111,6 +201,20 @@ async function generateQRCode() {
   }
 }
 
+// 处理安装
+async function handleInstall() {
+  installing.value = true
+  try {
+    const result = await installPWA()
+    if (result === 'accepted') {
+      // 安装成功
+      browserInfo.value = detectBrowser()
+    }
+  } finally {
+    installing.value = false
+  }
+}
+
 function handleClose() {
   emit('update:visible', false)
 }
@@ -127,18 +231,16 @@ function handleVisibleChange(value: boolean) {
 }
 
 .duck-image-section {
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
 .duck-image {
   width: 100%;
-  height: 400px;
+  height: 300px;
   object-fit: contain;
   margin-bottom: 16px;
   border-radius: 12px;
-  /* box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); */
   background: #f8f9fa;
-
 }
 
 .app-title {
@@ -148,8 +250,113 @@ function handleVisibleChange(value: boolean) {
   margin: 0;
 }
 
+/* PWA 安装区域样式 */
+.pwa-install-section {
+  margin-bottom: 24px;
+  padding: 20px;
+  background: linear-gradient(135deg, #e8f4fd 0%, #f0e6f6 100%);
+  border-radius: 12px;
+  text-align: left;
+}
+
+.install-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.install-icon {
+  width: 24px;
+  height: 24px;
+  color: #4A90E2;
+}
+
+.install-header .section-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.install-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #e8f5e9;
+  border-radius: 8px;
+  color: #2e7d32;
+  font-weight: 500;
+}
+
+.install-status.installed .status-icon {
+  width: 20px;
+  height: 20px;
+  color: #2e7d32;
+}
+
+.install-auto {
+  text-align: center;
+}
+
+.install-desc {
+  margin: 0 0 16px 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.install-guide {
+  text-align: left;
+}
+
+.browser-info {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.browser-badge,
+.os-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.browser-badge {
+  background: #4A90E2;
+  color: white;
+}
+
+.os-badge {
+  background: #7c4dff;
+  color: white;
+}
+
+.guide-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 12px;
+}
+
+.guide-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: #555;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.guide-steps li {
+  margin-bottom: 4px;
+}
+
+/* 二维码区域 */
 .qr-section {
-  margin-bottom: 32px;
+  margin-bottom: 24px;
   padding: 20px;
   background: #f8f9fa;
   border-radius: 12px;
@@ -173,12 +380,7 @@ function handleVisibleChange(value: boolean) {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.qr-tip {
-  font-size: 14px;
-  color: #666;
-  margin: 0;
-}
-
+/* 开发信息 */
 .dev-info {
   background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
   padding: 20px;
@@ -208,6 +410,7 @@ function handleVisibleChange(value: boolean) {
   color: #666;
 }
 
+/* GitHub 链接 */
 .github-section {
   margin-bottom: 24px;
 }
@@ -240,6 +443,7 @@ function handleVisibleChange(value: boolean) {
 
 .github-text {
   flex: 1;
+  text-align: left;
 }
 
 .github-title {
@@ -261,8 +465,7 @@ function handleVisibleChange(value: boolean) {
 
 @media (max-width: 480px) {
   .duck-image {
-    /* width: 100px; */
-    /* height: 100px; */
+    height: 200px;
   }
   
   .app-title {
@@ -293,6 +496,14 @@ function handleVisibleChange(value: boolean) {
   
   .github-url {
     font-size: 12px;
+  }
+  
+  .pwa-install-section {
+    padding: 16px;
+  }
+  
+  .guide-steps {
+    font-size: 13px;
   }
 }
 </style>

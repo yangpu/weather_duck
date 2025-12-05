@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <!-- Favicon配置 -->
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
-    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#4A90E2" />
     <meta name="description" content="Weather Duck - 记录天气与心情的日记应用" />
     <!-- PWA Meta Tags -->
@@ -125,7 +125,7 @@
     <!-- 预加载关键资源 -->
     <link rel="preload" href="/weather_duck.jpg" as="image">
     
-    <!-- 增强的Service Worker和缓存管理 -->
+    <!-- 数据缓存管理 -->
     <script>
       // 全局错误处理
       window.addEventListener('error', function(e) {
@@ -148,75 +148,6 @@
         }, 500);
       }
 
-      // Service Worker 注册和缓存管理
-      if ('serviceWorker' in navigator) {
-        const isDevHost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-        const shouldResetSW = isDevHost && location.search.includes('reset-sw');
-        
-        const registerSW = async () => {
-          try {
-            // 仅在本地开发且显式带参数时重置 SW
-            if (shouldResetSW) {
-              console.log('[SW] Resetting Service Worker...');
-              const registrations = await navigator.serviceWorker.getRegistrations();
-              for (const reg of registrations) await reg.unregister();
-              await new Promise(r => setTimeout(r, 300));
-            }
-            
-            // 动态获取base路径
-            const getBasePath = () => {
-              const path = window.location.pathname
-              // 如果URL包含子路径（如 /weather_duck/），提取base路径
-              const match = path.match(/^(\/[^\/]+\/)/)
-              return match ? match[1] : '/'
-            }
-            
-            const basePath = getBasePath()
-            const swPath = basePath === '/' ? '/sw.js' : basePath + 'sw.js'
-            
-            const registration = await navigator.serviceWorker.register(swPath, { 
-              scope: basePath,
-              updateViaCache: 'none' // 不缓存sw.js，确保总是获取最新版本
-            });
-            
-            console.log('[SW] Service Worker registered successfully', registration);
-            
-            // 监听更新
-            registration.addEventListener('updatefound', () => {
-              const newWorker = registration.installing;
-              console.log('[SW] New Service Worker found, installing...');
-              
-              newWorker.addEventListener('statechange', () => {
-                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                  console.log('[SW] New Service Worker installed, prompting for update');
-                  // 可选：显示"有新版本可用"提示
-                  if (confirm('发现新版本，是否立即更新？')) {
-                    newWorker.postMessage({ type: 'SKIP_WAITING' });
-                    window.location.reload();
-                  }
-                }
-              });
-            });
-            
-            // 监听控制器变化
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-              console.log('[SW] Controller changed, reloading page');
-              window.location.reload();
-            });
-            
-          } catch (error) {
-            console.error('[SW] Service Worker registration failed:', error);
-          }
-        };
-
-        // 页面加载后立即注册 Service Worker
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', registerSW);
-        } else {
-          registerSW();
-        }
-      }
-
       // 增强的数据缓存管理
       class EnhancedDataCache {
         constructor() {
@@ -231,7 +162,6 @@
             this.db = await this.openDB();
           } catch (error) {
             console.error('IndexedDB 初始化失败:', error);
-            // 降级到localStorage
             this.useLocalStorage = true;
           }
         }
@@ -239,20 +169,14 @@
         openDB() {
           return new Promise((resolve, reject) => {
             const request = indexedDB.open(this.dbName, this.version);
-            
             request.onerror = () => reject(request.error);
             request.onsuccess = () => resolve(request.result);
-            
             request.onupgradeneeded = (event) => {
               const db = event.target.result;
-              
-              // 创建天气数据存储
               if (!db.objectStoreNames.contains('weather')) {
                 const weatherStore = db.createObjectStore('weather', { keyPath: 'id' });
                 weatherStore.createIndex('date', 'date', { unique: false });
               }
-              
-              // 创建日记数据存储
               if (!db.objectStoreNames.contains('diary')) {
                 const diaryStore = db.createObjectStore('diary', { keyPath: 'id' });
                 diaryStore.createIndex('date', 'date', { unique: true });
@@ -266,7 +190,6 @@
             localStorage.setItem(`weather_${date}`, JSON.stringify(data));
             return;
           }
-
           try {
             const transaction = this.db.transaction(['weather'], 'readwrite');
             const store = transaction.objectStore('weather');
@@ -281,7 +204,6 @@
             const data = localStorage.getItem(`weather_${date}`);
             return data ? JSON.parse(data) : null;
           }
-
           try {
             const transaction = this.db.transaction(['weather'], 'readonly');
             const store = transaction.objectStore('weather');
@@ -298,7 +220,6 @@
             localStorage.setItem(`diary_${date}`, JSON.stringify(data));
             return;
           }
-
           try {
             const transaction = this.db.transaction(['diary'], 'readwrite');
             const store = transaction.objectStore('diary');
@@ -313,7 +234,6 @@
             const data = localStorage.getItem(`diary_${date}`);
             return data ? JSON.parse(data) : null;
           }
-
           try {
             const transaction = this.db.transaction(['diary'], 'readonly');
             const store = transaction.objectStore('diary');
@@ -330,15 +250,9 @@
       window.enhancedCache = new EnhancedDataCache();
 
       // 跟踪加载状态
-      let loadingStates = {
-        app: false,
-        weather: false,
-        diary: false,
-        cache: false
-      };
-
+      let loadingStates = { app: false, weather: false, diary: false, cache: false };
       let loadingTimeout;
-      let maxLoadingTime = 8000; // 8秒最大加载时间
+      let maxLoadingTime = 8000;
       let debugInfo = {
         userAgent: navigator.userAgent,
         isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent),
@@ -359,21 +273,18 @@
         const allLoaded = Object.values(loadingStates).every(state => state);
         const anyDataLoaded = loadingStates.weather || loadingStates.diary;
 
-        // 离线模式优化：如果离线且app已加载，立即隐藏加载屏幕
         if (!isOnline && loadingStates.app) {
           clearTimeout(loadingTimeout);
           hideLoadingScreen('[INDEX] offline + app loaded');
           return;
         }
 
-        // 首屏体验优化：只要有天气或日记任意数据到位，立即隐藏过渡页
         if (anyDataLoaded) {
           clearTimeout(loadingTimeout);
           hideLoadingScreen('[INDEX] data loaded (weather/diary)');
           return;
         }
 
-        // App加载完成且cache就绪，即使没有数据也显示页面
         if (loadingStates.app && loadingStates.cache) {
           clearTimeout(loadingTimeout);
           hideLoadingScreen('[INDEX] app + cache loaded');
@@ -390,7 +301,6 @@
       function hideLoadingScreen(reason) {
         const loadingScreen = document.getElementById('loading-screen');
         if (loadingScreen) {
-          // console.log(`[TRANSITION ${new Date().toISOString()}] index hide loading-screen${reason ? ' - ' + reason : ''}`);
           loadingScreen.classList.add('fade-out');
           setTimeout(() => {
             loadingScreen.remove();
@@ -401,8 +311,6 @@
       // 标记某个部分已加载完成
       window.markLoaded = function(component) {
         loadingStates[component] = true;
-        // console.log(`[TRANSITION ${new Date().toISOString()}] index markLoaded(${component})`);
-        // 优先策略：首屏数据一到就隐藏过渡页
         if (component === 'weather' || component === 'diary') {
           hideLoadingScreen(`[INDEX] markLoaded(${component})`);
           return;
@@ -416,49 +324,21 @@
         checkAllLoaded();
       });
 
-      // DOMContentLoaded 事件（更早触发）
       document.addEventListener('DOMContentLoaded', () => {
         loadingStates.cache = true;
         checkAllLoaded();
       });
 
       // 网络状态变化监听
-      window.addEventListener('online', () => {
-        isOnline = true;
-      });
-
+      window.addEventListener('online', () => { isOnline = true; });
       window.addEventListener('offline', () => {
         isOnline = false;
-        // 网络断开时立即关闭过渡页面，但只有在app已加载时
-        if (loadingStates.app) {
-          hideLoadingScreen();
-        }
+        if (loadingStates.app) hideLoadingScreen();
       });
-
-
 
       // 移动端触摸事件优化
       if (debugInfo.isIOS) {
         document.addEventListener('touchstart', function() {}, { passive: true });
-      }
-
-      // 移动端事件监听
-      if (debugInfo.isIOS || /Android/i.test(navigator.userAgent)) {
-        // 监听页面可见性变化
-        document.addEventListener('visibilitychange', () => {
-          // 页面可见性变化处理
-        });
-
-        // 监听内存警告（iOS Safari）
-        if (debugInfo.isIOS) {
-          window.addEventListener('pagehide', () => {
-            // iOS页面隐藏事件处理
-          });
-          
-          window.addEventListener('pageshow', (event) => {
-            // iOS页面显示事件处理
-          });
-        }
       }
     </script>
     
