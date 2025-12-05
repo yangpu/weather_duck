@@ -93,7 +93,7 @@
               <!-- 上传进度 -->
               <div v-if="image.uploading" class="upload-progress">
                 <t-progress
-                  :percentage="image.progress.toFixed"
+                  :percentage="image.progress.toFixed(0)"
                   size="small"
                   :show-info="false"
                 />

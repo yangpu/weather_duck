@@ -163,8 +163,19 @@
               await new Promise(r => setTimeout(r, 300));
             }
             
-            const registration = await navigator.serviceWorker.register('/sw.js', { 
-              scope: '/',
+            // 动态获取base路径
+            const getBasePath = () => {
+              const path = window.location.pathname
+              // 如果URL包含子路径（如 /weather_duck/），提取base路径
+              const match = path.match(/^(\/[^\/]+\/)/)
+              return match ? match[1] : '/'
+            }
+            
+            const basePath = getBasePath()
+            const swPath = basePath === '/' ? '/sw.js' : basePath + 'sw.js'
+            
+            const registration = await navigator.serviceWorker.register(swPath, { 
+              scope: basePath,
               updateViaCache: 'none' // 不缓存sw.js，确保总是获取最新版本
             });
             

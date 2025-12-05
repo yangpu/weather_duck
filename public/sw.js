@@ -1,5 +1,5 @@
 // Enhanced Service Worker for Weather Duck PWA
-const CACHE_VERSION = '1.2.4';
+const CACHE_VERSION = '1.2.5';
 const CACHE_NAME = `weather-duck-v${CACHE_VERSION}`;
 const DATA_CACHE_NAME = `weather-duck-data-v${CACHE_VERSION}`;
 const RUNTIME_CACHE_NAME = `weather-duck-runtime-v${CACHE_VERSION}`;
@@ -7,15 +7,26 @@ const RUNTIME_CACHE_NAME = `weather-duck-runtime-v${CACHE_VERSION}`;
 // 检测是否为开发环境
 const isDevelopment = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
 
-// 需要预缓存的核心资源（shell）
+// 动态获取base路径
+const getBasePath = () => {
+  const path = self.location.pathname
+  // 从sw.js路径中提取base路径
+  // 例如: /weather_duck/sw.js -> /weather_duck/
+  const match = path.match(/^(\/[^\/]+\/)/)
+  return match ? match[1] : '/'
+}
+
+const BASE_PATH = getBasePath()
+
+// 需要预缓存的核心资源（shell）- 使用动态base路径
 const STATIC_CACHE_URLS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/favicon.svg',
-  '/apple-touch-icon.svg',
-  '/icons/icon.svg',
-  '/weather_duck.jpg'
+  `${BASE_PATH}`,
+  `${BASE_PATH}index.html`,
+  `${BASE_PATH}manifest.json`,
+  `${BASE_PATH}favicon.svg`,
+  `${BASE_PATH}apple-touch-icon.svg`,
+  `${BASE_PATH}icons/icon.svg`,
+  `${BASE_PATH}weather_duck.jpg`
 ];
 
 // 生产环境额外缓存的资源会在运行时动态添加
@@ -30,6 +41,7 @@ const API_CACHE_PATTERNS = [
 // Service Worker 安装
 self.addEventListener('install', (event) => {
   console.log('[SW] Installing Service Worker version:', CACHE_VERSION);
+  console.log('[SW] Base Path:', BASE_PATH);
   console.log('[SW] Environment:', isDevelopment ? 'Development' : 'Production');
   
   event.waitUntil(
@@ -157,16 +169,21 @@ self.addEventListener('fetch', (event) => {
           if (response && response.ok) {
             const cache = await caches.open(CACHE_NAME);
             // 同时缓存到多个路径
-            await cache.put('/index.html', response.clone());
-            await cache.put('/', response.clone());
-            console.log('[SW] Navigation successful, cached to /index.html and /');
+            await cache.put(`${BASE_PATH}index.html`, response.clone());
+            await cache.put(`${BASE_PATH}`, response.clone());
+            console.log('[SW] Navigation successful, cached to index.html');
           }
           return response;
         } catch (error) {
           console.log('[SW] 🔌 Navigation failed (offline), returning cached app:', error.message);
           
           // 尝试多个缓存源
-          const cacheKeys = ['/index.html', '/', '/index.html?', request.url];
+          const cacheKeys = [
+            `${BASE_PATH}index.html`,
+            `${BASE_PATH}`,
+            `${BASE_PATH}index.html?`,
+            request.url
+          ];
           
           // 先在主缓存中查找
           const mainCache = await caches.open(CACHE_NAME);
@@ -282,8 +299,8 @@ self.addEventListener('push', (event) => {
     event.waitUntil(
       self.registration.showNotification(data.title || '天气鸭', {
         body: data.body || '您有新的天气提醒',
-        icon: '/icons/icon.svg',
-        badge: '/icons/icon.svg',
+        icon: `${BASE_PATH}icons/icon.svg`,
+        badge: `${BASE_PATH}icons/icon.svg`,
         tag: 'weather-notification',
         requireInteraction: false,
         actions: [
@@ -307,7 +324,7 @@ self.addEventListener('notificationclick', (event) => {
 
   if (event.action === 'view') {
     event.waitUntil(
-      clients.openWindow('/')
+      clients.openWindow(BASE_PATH)
     );
   }
 });
