@@ -94,7 +94,7 @@
     </div>
 
     <!-- 图片预览 -->
-    <t-image-viewer
+    <EnhancedImageViewer
       v-model:visible="imagePreviewVisible"
       :images="diaryData?.images || []"
       v-model:index="previewIndex"
@@ -110,6 +110,7 @@ import { diaryService } from '../services/diaryService'
 
 import type { WeatherDiary } from '../config/supabase'
 import WeatherSummary from './WeatherSummary.vue'
+import EnhancedImageViewer from './EnhancedImageViewer.vue'
 
 interface Props {
   visible: boolean

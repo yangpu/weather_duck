@@ -2,3 +2,5 @@ node_modules
 logs
 dist
 .codebuddy
+dev-dist/sw.js
+dist/sw.js
