@@ -30,22 +30,19 @@ class OptimizedUnifiedCacheService {
   private setupEventListeners(): void {
     // 监听网络状态变化
     window.addEventListener('online', () => {
-
       this.handleNetworkOnline()
     })
 
     window.addEventListener('offline', () => {
-
+      // 网络已断开，使用离线缓存
     })
 
     // 监听缓存更新事件
     window.addEventListener('cache:weather:updated', (event: any) => {
-
       this.notifyDataUpdated('weather', event.detail)
     })
 
     window.addEventListener('cache:diary:updated', (event: any) => {
-
       this.notifyDataUpdated('diary', event.detail)
     })
   }
@@ -59,8 +56,6 @@ class OptimizedUnifiedCacheService {
     forceRefresh: boolean = false
   ): Promise<InitializeDataResult> {
     const cacheKey = `optimized_init_${startDate}_${endDate}_${latitude}_${longitude}`
-    
-
 
     // 更新全局日期范围
     dateRangeManager.setDateRange(startDate, endDate)
@@ -88,7 +83,6 @@ class OptimizedUnifiedCacheService {
     try {
       const isOnline = navigator.onLine
 
-
       // 第一步：缓存优先获取数据（立即返回，确保性能）
       const weatherDataPromise = enhancedOfflineCacheService.getWeatherDataCacheFirst(
         startDate, 
@@ -110,18 +104,13 @@ class OptimizedUnifiedCacheService {
         diaryDataPromise
       ])
 
-
-
       // 离线模式特殊处理：如果离线且有数据（包括占位数据），立即返回
       if (!isOnline) {
-
         return this.finalizeInitialization(weatherData, diariesData, `${startDate}_${endDate}`)
       }
 
       // 第二步：如果强制刷新或在线且缓存不足，立即加载在线数据
       if (forceRefresh || (isOnline && this.shouldLoadOnlineData(weatherData, diariesData))) {
-
-        
         try {
           const [onlineWeatherData, onlineDiariesData] = await Promise.all([
             this.loadWeatherDataOnline(latitude, longitude, startDate, endDate, true),
@@ -136,7 +125,8 @@ class OptimizedUnifiedCacheService {
           const mergedWeatherData = this.mergeWeatherData(weatherData, onlineWeatherData)
           const mergedDiariesData = this.mergeDiaryData(diariesData, onlineDiariesData)
 
-
+          // 预缓存日记中的图片和视频到 Workbox
+          this.precacheDiaryMedia(mergedDiariesData)
 
           return this.finalizeInitialization(mergedWeatherData, mergedDiariesData, `${startDate}_${endDate}`)
         } catch (onlineError) {
@@ -147,7 +137,6 @@ class OptimizedUnifiedCacheService {
 
       // 第三步：如果在线且不强制刷新，启动后台更新
       if (isOnline && !forceRefresh) {
-
         this.updateDataInBackground(startDate, endDate, latitude, longitude)
       }
 
@@ -161,13 +150,21 @@ class OptimizedUnifiedCacheService {
         const fallbackWeatherData = await enhancedOfflineCacheService.getWeatherDataCacheFirst(startDate, endDate)
         const fallbackDiariesData = await enhancedOfflineCacheService.getDiaryDataCacheFirst(startDate, endDate)
         
-
         return this.finalizeInitialization(fallbackWeatherData, fallbackDiariesData, `${startDate}_${endDate}`)
       } catch (fallbackError) {
         console.error('❌ 兜底缓存也失败:', fallbackError)
         throw error
       }
     }
+  }
+
+  // 预缓存日记中的媒体文件到 Workbox - 已禁用自动预缓存
+  // 图片只在需要时懒加载，视频不缓存
+  private async precacheDiaryMedia(_diaries: DiaryData[]): Promise<void> {
+    // 不再自动预缓存所有图片和视频
+    // 图片将在卡片可见时懒加载第一张
+    // 所有图片在打开日记详情时加载
+    // 视频不缓存，每次在线加载
   }
 
   // 加载在线天气数据
@@ -319,8 +316,6 @@ class OptimizedUnifiedCacheService {
       await requestDeduplicator.executeRequest(
         backgroundKey,
         async () => {
-
-          
           // 后台加载最新数据
           const [newWeatherData, newDiariesData] = await Promise.all([
             this.loadWeatherDataOnline(latitude, longitude, startDate, endDate, true),
@@ -331,7 +326,8 @@ class OptimizedUnifiedCacheService {
           enhancedOfflineCacheService.batchCacheWeatherData(newWeatherData)
           enhancedOfflineCacheService.batchCacheDiaryData(newDiariesData)
           
-
+          // 预缓存日记中的图片和视频到 Workbox
+          this.precacheDiaryMedia(newDiariesData)
           
           // 发送后台更新完成事件
           window.dispatchEvent(new CustomEvent('unified:background:updated', {

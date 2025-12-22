@@ -57,9 +57,15 @@
             <span class="city-text">{{ diaryData.city }}</span>
           </div>
         </div>
-        <!-- 2. 图片第二显示 -->
+        <!-- 2. 图片第二显示 - 使用懒加载 -->
         <div class="diary-image" v-if="getFirstImage(diaryData)">
-          <img :src="getFirstImage(diaryData)" alt="日记图片" />
+          <img 
+            :src="cachedImageUrl || getFirstImage(diaryData)" 
+            :data-src="getFirstImage(diaryData)"
+            alt="日记图片" 
+            loading="lazy"
+            @load="onImageLoad"
+          />
         </div>
         <!-- 3. 文本最后显示 -->
         <div class="diary-content" v-if="diaryData.content">
@@ -77,10 +83,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { WeatherData } from '../types/weather'
 import { DateUtils } from '../utils/dateUtils'
 import { optimizedUnifiedCacheService } from '../services/optimizedUnifiedCacheService'
+import { workboxCacheService } from '../services/workboxCacheService'
 import type { WeatherDiary } from '../config/supabase'
 import { truncateText } from '../utils/textUtils'
 
@@ -105,6 +112,8 @@ const isToday = computed(() => {
 
 const hasDiary = ref(false)
 const diaryData = ref<WeatherDiary | null>(null)
+const cachedImageUrl = ref<string | null>(null)
+const isImageCached = ref(false)
 
 function loadDiary() {
   try {
@@ -113,12 +122,9 @@ function loadDiary() {
     hasDiary.value = !!diary
     diaryData.value = Array.isArray(diary) ? diary[0] : diary
     
-    // if (diary) {
-    //   console.log(`✅ WeatherCard: 找到日记 ${props.weather.date}:`, diary)
-    // } else {
-    //   console.log(`❌ WeatherCard: 日记不存在 ${props.weather.date}`)
-    //   console.log(`📦 WeatherCard: 缓存中的所有日记:`, Array.from((window as any).__diaryCache?.keys() || []))
-    // }
+    // 重置图片缓存状态
+    cachedImageUrl.value = null
+    isImageCached.value = false
     
     return
   } catch (error) {
@@ -127,6 +133,33 @@ function loadDiary() {
     diaryData.value = null
   }
 }
+
+// 当图片加载完成时，缓存它
+async function onImageLoad(event: Event) {
+  if (isImageCached.value) return
+  
+  const img = event.target as HTMLImageElement
+  const imageUrl = img.dataset.src || img.src
+  
+  if (imageUrl && !isImageCached.value) {
+    isImageCached.value = true
+    // 后台缓存图片，不阻塞UI
+    workboxCacheService.cacheSingleImage(imageUrl).catch(() => {
+      // 忽略缓存错误
+    })
+  }
+}
+
+// 监听日记数据变化，预加载第一张图片
+watch(() => diaryData.value, async (newDiary) => {
+  if (newDiary?.images?.[0] && !isImageCached.value) {
+    // 检查图片是否已在缓存中
+    const cached = await workboxCacheService.isCached(newDiary.images[0])
+    if (cached) {
+      isImageCached.value = true
+    }
+  }
+}, { immediate: true })
 
 function onDiariesLoaded(_ev: Event) {
   // 批量日记加载完成，更新显示

@@ -1,19 +1,109 @@
-import { supabase, STORAGE_BUCKETS } from '../config/supabase'
+import { supabase, STORAGE_BUCKETS, SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/supabase'
 
 /**
  * Supabase存储服务 - 优化版本
- * 支持批量上传、用户隔离、更好的错误处理
+ * 支持批量上传、用户隔离、真实上传进度
  */
 export class SupabaseStorageService {
   
   /**
-   * 上传图片文件 - 支持用户隔离和进度回调
+   * 使用 XMLHttpRequest 上传文件并获取真实进度
+   */
+  private static async uploadWithProgress(
+    bucket: string,
+    filePath: string,
+    file: File,
+    onProgress?: (progress: number) => void
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+        // 回退到普通上传
+        this.uploadWithoutProgress(bucket, filePath, file)
+          .then(resolve)
+          .catch(reject)
+        return
+      }
+      
+      const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${bucket}/${filePath}`
+      
+      const xhr = new XMLHttpRequest()
+      
+      // 监听上传进度
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100)
+          onProgress(progress)
+        }
+      })
+      
+      // 监听完成
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          // 获取公共URL
+          const { data: urlData } = supabase!.storage
+            .from(bucket)
+            .getPublicUrl(filePath)
+          resolve(urlData.publicUrl)
+        } else {
+          reject(new Error(`上传失败: ${xhr.status} ${xhr.statusText}`))
+        }
+      })
+      
+      // 监听错误
+      xhr.addEventListener('error', () => {
+        reject(new Error('网络错误'))
+      })
+      
+      xhr.addEventListener('abort', () => {
+        reject(new Error('上传已取消'))
+      })
+      
+      // 发送请求
+      xhr.open('POST', uploadUrl)
+      xhr.setRequestHeader('Authorization', `Bearer ${SUPABASE_ANON_KEY}`)
+      xhr.setRequestHeader('apikey', SUPABASE_ANON_KEY)
+      xhr.setRequestHeader('x-upsert', 'false')
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+      xhr.setRequestHeader('Cache-Control', 'max-age=3600')
+      
+      xhr.send(file)
+    })
+  }
+  
+  /**
+   * 无进度回调的普通上传（回退方案）
+   */
+  private static async uploadWithoutProgress(
+    bucket: string,
+    filePath: string,
+    file: File
+  ): Promise<string> {
+    const { data, error } = await supabase!.storage
+      .from(bucket)
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false
+      })
+
+    if (error) {
+      throw error
+    }
+
+    const { data: urlData } = supabase!.storage
+      .from(bucket)
+      .getPublicUrl(data.path)
+
+    return urlData.publicUrl
+  }
+  
+  /**
+   * 上传图片文件 - 支持用户隔离和真实进度回调
    */
   static async uploadImage(
     file: File, 
     fileName?: string, 
     userId?: string,
-    _onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void
   ): Promise<string> {
     try {
       const fileExt = file.name.split('.').pop()
@@ -22,26 +112,10 @@ export class SupabaseStorageService {
       // 如果提供了用户ID，则在路径中包含用户文件夹
       const filePath = userId ? `${userId}/${finalFileName}` : finalFileName
       
-      const { data, error } = await supabase!.storage
-        .from(STORAGE_BUCKETS.IMAGES)
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        })
-
-      if (error) {
-        console.error('图片上传失败:', error)
-        throw error
-      }
-
-      // 获取公共URL
-      const { data: urlData } = supabase!.storage
-        .from(STORAGE_BUCKETS.IMAGES)
-        .getPublicUrl(data.path)
-
-      return urlData.publicUrl
+      // 使用带进度的上传
+      return await this.uploadWithProgress(STORAGE_BUCKETS.IMAGES, filePath, file, onProgress)
     } catch (error) {
-      console.error('上传图片时发生错�?', error)
+      console.error('上传图片时发生错误:', error)
       throw error
     }
   }
@@ -81,13 +155,13 @@ export class SupabaseStorageService {
   }
 
   /**
-   * 上传视频文件 - 支持用户隔离和进度回调
+   * 上传视频文件 - 支持用户隔离和真实进度回调
    */
   static async uploadVideo(
     file: File, 
     fileName?: string, 
     userId?: string,
-    _onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void
   ): Promise<string> {
     try {
       const fileExt = file.name.split('.').pop()
@@ -96,26 +170,10 @@ export class SupabaseStorageService {
       // 如果提供了用户ID，则在路径中包含用户文件夹
       const filePath = userId ? `${userId}/${finalFileName}` : finalFileName
       
-      const { data, error } = await supabase!.storage
-        .from(STORAGE_BUCKETS.VIDEOS)
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        })
-
-      if (error) {
-        console.error('视频上传失败:', error)
-        throw error
-      }
-
-      // 获取公共URL
-      const { data: urlData } = supabase!.storage
-        .from(STORAGE_BUCKETS.VIDEOS)
-        .getPublicUrl(data.path)
-
-      return urlData.publicUrl
+      // 使用带进度的上传
+      return await this.uploadWithProgress(STORAGE_BUCKETS.VIDEOS, filePath, file, onProgress)
     } catch (error) {
-      console.error('上传视频时发生错�?', error)
+      console.error('上传视频时发生错误:', error)
       throw error
     }
   }
@@ -129,7 +187,7 @@ export class SupabaseStorageService {
       const urlParts = url.split('/')
       const fileName = urlParts[urlParts.length - 1]
       
-      // 判断是图片还是视�?
+      // 判断是图片还是视频
       const isImage = url.includes(STORAGE_BUCKETS.IMAGES)
       const bucket = isImage ? STORAGE_BUCKETS.IMAGES : STORAGE_BUCKETS.VIDEOS
       
@@ -144,7 +202,7 @@ export class SupabaseStorageService {
 
       return true
     } catch (error) {
-      console.error('删除文件时发生错�?', error)
+      console.error('删除文件时发生错误:', error)
       return false
     }
   }

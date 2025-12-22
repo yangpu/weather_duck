@@ -211,7 +211,6 @@ export function initPWAInstall(): void {
   window.addEventListener('beforeinstallprompt', (e: Event) => {
     e.preventDefault()
     deferredPrompt = e as BeforeInstallPromptEvent
-    console.log('[PWA] Install prompt captured')
     
     // 触发自定义事件通知组件
     window.dispatchEvent(new CustomEvent('pwa-install-available'))
@@ -220,7 +219,6 @@ export function initPWAInstall(): void {
   // 监听安装完成事件
   window.addEventListener('appinstalled', () => {
     deferredPrompt = null
-    console.log('[PWA] App installed successfully')
     
     // 触发自定义事件通知组件
     window.dispatchEvent(new CustomEvent('pwa-installed'))
@@ -232,19 +230,16 @@ export function initPWAInstall(): void {
  */
 export async function installPWA(): Promise<'accepted' | 'dismissed' | 'unavailable'> {
   if (!deferredPrompt) {
-    console.log('[PWA] No install prompt available')
     return 'unavailable'
   }
   
   try {
     await deferredPrompt.prompt()
     const { outcome } = await deferredPrompt.userChoice
-    console.log('[PWA] User choice:', outcome)
     
     deferredPrompt = null
     return outcome
-  } catch (error) {
-    console.error('[PWA] Install error:', error)
+  } catch {
     return 'unavailable'
   }
 }

@@ -74,63 +74,187 @@ export default defineConfig(({ command, mode }) => {
           ]
         },
         workbox: {
-          // 预缓存的资源
-          globPatterns: ['**/*.{js,css,html,svg,png,jpg,jpeg,gif,woff,woff2}'],
-          // 运行时缓存策略
+          // 预缓存的资源 - 包含所有静态资源
+          globPatterns: ['**/*.{js,css,html,svg,png,jpg,jpeg,gif,woff,woff2,ico}'],
+          // 运行时缓存策略 - 缓存优先，增强离线能力
           runtimeCaching: [
+            // ========== Supabase REST API (日记数据) - 缓存优先 ==========
             {
-              // 缓存 Supabase API 请求
-              urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
-              handler: 'NetworkFirst',
+              urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/.*/i,
+              handler: 'CacheFirst',
               options: {
-                cacheName: 'supabase-api-cache',
+                cacheName: 'supabase-rest-cache',
                 expiration: {
-                  maxEntries: 100,
-                  maxAgeSeconds: 60 * 60 * 24 // 24小时
+                  maxEntries: 200,
+                  maxAgeSeconds: 60 * 60 * 24 * 7 // 7天
                 },
                 cacheableResponse: {
                   statuses: [0, 200]
                 },
-                networkTimeoutSeconds: 10
+                // 后台同步更新
+                backgroundSync: {
+                  name: 'supabase-sync-queue',
+                  options: {
+                    maxRetentionTime: 60 * 60 * 24 // 24小时
+                  }
+                }
               }
             },
+            // ========== Supabase Storage (图片/视频) - 缓存优先 ==========
             {
-              // 缓存天气 API
-              urlPattern: /^https:\/\/api\..*weather.*/i,
+              urlPattern: /^https:\/\/.*\.supabase\.co\/storage\/v1\/object\/public\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'supabase-storage-cache',
+                expiration: {
+                  maxEntries: 500,
+                  maxAgeSeconds: 60 * 60 * 24 * 30 // 30天
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                },
+                // 范围请求支持（视频播放）
+                rangeRequests: true
+              }
+            },
+            // ========== Supabase Auth API - 网络优先 ==========
+            {
+              urlPattern: /^https:\/\/.*\.supabase\.co\/auth\/.*/i,
               handler: 'NetworkFirst',
+              options: {
+                cacheName: 'supabase-auth-cache',
+                expiration: {
+                  maxEntries: 20,
+                  maxAgeSeconds: 60 * 60 // 1小时
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                },
+                networkTimeoutSeconds: 5
+              }
+            },
+            // ========== Open-Meteo 天气 API - 缓存优先 ==========
+            {
+              urlPattern: /^https:\/\/api\.open-meteo\.com\/.*/i,
+              handler: 'CacheFirst',
               options: {
                 cacheName: 'weather-api-cache',
                 expiration: {
-                  maxEntries: 50,
-                  maxAgeSeconds: 60 * 30 // 30分钟
+                  maxEntries: 100,
+                  maxAgeSeconds: 60 * 60 * 2 // 2小时（天气数据更新频率）
                 },
                 cacheableResponse: {
                   statuses: [0, 200]
-                },
-                networkTimeoutSeconds: 10
+                }
               }
             },
+            // ========== 其他天气 API - 缓存优先 ==========
             {
-              // 缓存图片资源
-              urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/i,
+              urlPattern: /^https:\/\/.*weather.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'weather-external-cache',
+                expiration: {
+                  maxEntries: 50,
+                  maxAgeSeconds: 60 * 60 * 2 // 2小时
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            },
+            // ========== 地理编码 API - 长期缓存 ==========
+            {
+              urlPattern: /^https:\/\/geocoding-api\.open-meteo\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'geocoding-cache',
+                expiration: {
+                  maxEntries: 100,
+                  maxAgeSeconds: 60 * 60 * 24 * 30 // 30天（地理位置不常变化）
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            },
+            // ========== 用户上传的图片 - 长期缓存 ==========
+            {
+              urlPattern: /\.(?:png|jpg|jpeg|gif|webp|heic|heif)$/i,
               handler: 'CacheFirst',
               options: {
                 cacheName: 'images-cache',
                 expiration: {
-                  maxEntries: 60,
-                  maxAgeSeconds: 60 * 60 * 24 * 30 // 30天
+                  maxEntries: 300,
+                  maxAgeSeconds: 60 * 60 * 24 * 60 // 60天
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
                 }
               }
             },
+            // ========== 用户上传的视频 - 不缓存，每次在线加载 ==========
             {
-              // 缓存字体
-              urlPattern: /\.(?:woff|woff2|ttf|eot)$/i,
+              urlPattern: /\.(?:mp4|webm|mov|avi|mkv)$/i,
+              handler: 'NetworkOnly',
+              options: {
+                // 视频不缓存，节省存储空间
+                // 每次在线加载
+              }
+            },
+            // ========== 字体文件 - 永久缓存 ==========
+            {
+              urlPattern: /\.(?:woff|woff2|ttf|eot|otf)$/i,
               handler: 'CacheFirst',
               options: {
                 cacheName: 'fonts-cache',
                 expiration: {
+                  maxEntries: 30,
+                  maxAgeSeconds: 60 * 60 * 24 * 365 // 1年
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            },
+            // ========== CDN 资源 - 长期缓存 ==========
+            {
+              urlPattern: /^https:\/\/cdn\..*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'cdn-cache',
+                expiration: {
+                  maxEntries: 100,
+                  maxAgeSeconds: 60 * 60 * 24 * 30 // 30天
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            },
+            // ========== Google Fonts - 长期缓存 ==========
+            {
+              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'google-fonts-stylesheets',
+                expiration: {
                   maxEntries: 20,
                   maxAgeSeconds: 60 * 60 * 24 * 365 // 1年
+                }
+              }
+            },
+            {
+              urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts-webfonts',
+                expiration: {
+                  maxEntries: 30,
+                  maxAgeSeconds: 60 * 60 * 24 * 365 // 1年
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
                 }
               }
             }
@@ -138,9 +262,11 @@ export default defineConfig(({ command, mode }) => {
           // 离线页面回退
           navigateFallback: 'index.html',
           navigateFallbackDenylist: [/^\/api\//],
-          // 跳过等待，立即激活
-          skipWaiting: false,
-          clientsClaim: true
+          // 立即激活新 SW
+          skipWaiting: true,
+          clientsClaim: true,
+          // 清理旧缓存
+          cleanupOutdatedCaches: true
         },
         devOptions: {
           enabled: true, // 开发环境也启用 PWA

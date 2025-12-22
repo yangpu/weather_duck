@@ -93,7 +93,7 @@
               <!-- 上传进度 -->
               <div v-if="image.uploading" class="upload-progress">
                 <t-progress
-                  :percentage="image.progress.toFixed(0)"
+                  :percentage="Math.round(image.progress)"
                   size="small"
                   :show-info="false"
                 />
@@ -154,7 +154,7 @@
               <!-- 上传进度 -->
               <div v-if="video.uploading" class="upload-progress">
                 <t-progress
-                  :percentage="video.progress.toFixed(0)"
+                  :percentage="Math.round(video.progress)"
                   size="small"
                   :show-info="true"
                 />
@@ -168,10 +168,10 @@
       <div v-if="saving" class="save-progress">
         <div class="progress-info">
           <span>{{ saveProgressText }}</span>
-          <span>{{ totalProgress.toFixed(0) }}%</span>
+          <span>{{ Math.round(totalProgress) }}%</span>
         </div>
         <t-progress
-          :percentage="totalProgress"
+          :percentage="Math.round(totalProgress)"
           :show-info="false"
         />
       </div>
@@ -414,6 +414,7 @@ async function loadDiary(forceRefresh = false) {
         : []
       
       // 加载已有的视频（若无视频则清空，避免残留上一天的预览）
+      // 注意：视频不缓存，每次在线加载
       selectedVideos.value = (diary.videos && diary.videos.length > 0)
         ? diary.videos.map((url: string, index: number) => ({
             file: new File([], `video-${index}.mp4`),
@@ -423,11 +424,29 @@ async function loadDiary(forceRefresh = false) {
             url: url
           }))
         : []
+      
+      // 后台缓存日记中的所有图片（不缓存视频）
+      if (diary.images && diary.images.length > 0) {
+        cacheDiaryImages(diary.images)
+      }
     } else {
       resetForm()
     }
   } catch (e) {
     resetForm()
+  }
+}
+
+// 缓存日记图片（后台执行，不阻塞UI）
+async function cacheDiaryImages(imageUrls: string[]) {
+  try {
+    const { workboxCacheService } = await import('../services/workboxCacheService')
+    // 后台缓存，不等待完成
+    workboxCacheService.precacheDiaryImages(imageUrls).catch(() => {
+      // 忽略缓存错误
+    })
+  } catch {
+    // 忽略导入错误
   }
 }
 

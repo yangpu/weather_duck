@@ -20,6 +20,10 @@ export const supabase = supabaseUrl && supabaseAnonKey &&
   ? createClient(supabaseUrl, supabaseAnonKey) 
   : null
 
+// 导出配置值（用于需要直接访问的场景，如 XHR 上传）
+export const SUPABASE_URL = supabaseUrl
+export const SUPABASE_ANON_KEY = supabaseAnonKey
+
 // 是否启用Supabase
 export const isSupabaseEnabled = !!supabase
 

@@ -5,10 +5,19 @@ import App from './App.vue'
 import { enhancedOfflineCacheService } from './services/enhancedOfflineCacheService'
 import { optimizedUnifiedCacheService } from './services/optimizedUnifiedCacheService'
 import { offlineDataService } from './services/offlineDataService'
-import { initPWAInstall } from './utils/pwa'
+import { workboxCacheService } from './services/workboxCacheService'
+import { initPWAInstall, onServiceWorkerUpdate } from './utils/pwa'
 
 // 初始化 PWA 安装监听
 initPWAInstall()
+
+// 监听 Service Worker 更新
+onServiceWorkerUpdate((registration) => {
+  // 发现新版本，触发更新事件
+  window.dispatchEvent(new CustomEvent('pwa-update-available', {
+    detail: { registration }
+  }))
+})
 
 const app = createApp(App)
 app.use(TDesign)
@@ -29,6 +38,7 @@ declare global {
     __enhancedOfflineCacheService: typeof enhancedOfflineCacheService
     __optimizedUnifiedCacheService: typeof optimizedUnifiedCacheService
     __offlineDataService: typeof offlineDataService
+    __workboxCacheService: typeof workboxCacheService
     __unifiedCacheService?: any
     __diaryCache?: any
     __weatherCache?: any
@@ -43,11 +53,17 @@ async function initializeServices() {
     window.__enhancedOfflineCacheService = enhancedOfflineCacheService
     window.__optimizedUnifiedCacheService = optimizedUnifiedCacheService
     window.__offlineDataService = offlineDataService
+    window.__workboxCacheService = workboxCacheService
     window.__unifiedCacheService = optimizedUnifiedCacheService
 
+    // 请求持久化存储（确保离线数据不被清理）
+    await workboxCacheService.requestPersistentStorage()
 
-  } catch (error) {
-    console.error('❌ 服务初始化失败:', error)
+    // 获取缓存统计（用于内部监控，不输出日志）
+    await workboxCacheService.getCacheStats()
+
+  } catch {
+    // 服务初始化失败，静默处理
   }
 }
 
