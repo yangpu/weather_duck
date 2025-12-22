@@ -272,9 +272,9 @@ async function loadDiary(forceRefresh = false) {
     if (!diary || forceRefresh) {
       diary = await diaryService.getDiaryByDate(props.weather.date, forceRefresh)
       
-      // 更新统一缓存
-      if (optimizedUnifiedCacheService && diary) {
-        optimizedUnifiedCacheService.setDiaryData(props.weather.date, diary)
+      // 更新统一缓存，强制刷新时通知组件更新
+      if (optimizedUnifiedCacheService) {
+        optimizedUnifiedCacheService.setDiaryData(props.weather.date, diary, forceRefresh)
       }
     }
     
@@ -356,7 +356,9 @@ async function refreshCurrentDay() {
   
   isRefreshing.value = true
   try {
+    // 强制刷新会自动通知 WeatherCard 组件更新
     await loadDiary(true)
+    
     // 预加载相邻日期的数据
     diaryService.preloadAdjacentDiaries(props.weather.date)
   } catch (error) {

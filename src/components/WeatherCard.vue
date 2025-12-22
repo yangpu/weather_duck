@@ -88,6 +88,7 @@ import { WeatherData } from '../types/weather'
 import { DateUtils } from '../utils/dateUtils'
 import { optimizedUnifiedCacheService } from '../services/optimizedUnifiedCacheService'
 import { workboxCacheService } from '../services/workboxCacheService'
+import { diaryService } from '../services/diaryService'
 import type { WeatherDiary } from '../config/supabase'
 import { truncateText } from '../utils/textUtils'
 
@@ -114,19 +115,53 @@ const hasDiary = ref(false)
 const diaryData = ref<WeatherDiary | null>(null)
 const cachedImageUrl = ref<string | null>(null)
 const isImageCached = ref(false)
+const isLoadingDiary = ref(false)
 
-function loadDiary() {
+async function loadDiary() {
+  if (isLoadingDiary.value) return
+  
   try {
     // 优化：优先从统一缓存服务获取数据
     const diary = optimizedUnifiedCacheService.getDiaryData(props.weather.date)
-    hasDiary.value = !!diary
-    diaryData.value = Array.isArray(diary) ? diary[0] : diary
+    
+    if (diary) {
+      hasDiary.value = true
+      diaryData.value = Array.isArray(diary) ? diary[0] : diary
+      // 重置图片缓存状态
+      cachedImageUrl.value = null
+      isImageCached.value = false
+      return
+    }
+    
+    // 如果缓存中没有数据且是今天，尝试从网络获取
+    if (isToday.value && navigator.onLine) {
+      isLoadingDiary.value = true
+      try {
+        const networkDiary = await diaryService.getDiaryByDate(props.weather.date, false)
+        if (networkDiary) {
+          // 更新缓存并通知其他组件
+          optimizedUnifiedCacheService.setDiaryData(props.weather.date, networkDiary, false)
+          hasDiary.value = true
+          diaryData.value = networkDiary
+        } else {
+          hasDiary.value = false
+          diaryData.value = null
+        }
+      } catch {
+        // 网络请求失败，保持空状态
+        hasDiary.value = false
+        diaryData.value = null
+      } finally {
+        isLoadingDiary.value = false
+      }
+    } else {
+      hasDiary.value = false
+      diaryData.value = null
+    }
     
     // 重置图片缓存状态
     cachedImageUrl.value = null
     isImageCached.value = false
-    
-    return
   } catch (error) {
     console.warn(`获取日记失败 (${props.weather.date}):`, error)
     hasDiary.value = false

@@ -461,8 +461,8 @@ class OptimizedUnifiedCacheService {
     return diaryCache ? Array.from(diaryCache.values()) : []
   }
 
-  // 设置日记数据
-  setDiaryData(date: string, diary: DiaryData | null): void {
+  // 设置日记数据（可选择是否触发更新事件）
+  setDiaryData(date: string, diary: DiaryData | null, notifyUpdate: boolean = false): void {
     // 确保全局日记缓存存在
     if (!window.__diaryCache) {
       window.__diaryCache = new Map<string, DiaryData>()
@@ -471,13 +471,18 @@ class OptimizedUnifiedCacheService {
     const diaryCache = window.__diaryCache
     if (diary) {
       diaryCache.set(date, diary)
-      // console.log(`📝 设置日记数据 [${date}]: ${diary.content ? '有内容' : '空内容'}`)
+      // 同步更新 enhancedOfflineCacheService 的缓存（包括内存和 localStorage）
+      enhancedOfflineCacheService.cacheDiaryData(date, diary)
     } else {
       diaryCache.delete(date)
-      // console.log(`📝 删除日记数据 [${date}]`)
     }
     
-    // console.log(`📝 当前全局日记缓存总数: ${diaryCache.size}`)
+    // 如果需要通知组件更新
+    if (notifyUpdate) {
+      window.dispatchEvent(new CustomEvent('diary:updated', {
+        detail: { date, diary }
+      }))
+    }
   }
 
   // 刷新特定日期的日记数据
