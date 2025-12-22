@@ -1,12 +1,22 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
+
+// 读取 package.json 获取版本号
+const packageJson = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'))
+const appVersion = packageJson.version
 
 export default defineConfig(({ command, mode }) => {
   // 开发环境使用根路径，生产环境使用相对路径
   const base = command === 'serve' ? '/' : './'
   
   return {
+    // 注入版本号常量
+    define: {
+      __APP_VERSION__: JSON.stringify(appVersion)
+    },
     plugins: [
       vue(),
       VitePWA({
