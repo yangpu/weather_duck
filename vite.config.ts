@@ -110,7 +110,15 @@ export default defineConfig(({ command, mode }) => {
                 }
               }
             },
-            // ========== Supabase Storage (图片/视频) - 缓存优先 ==========
+            // ========== Supabase Storage 视频 - 网络优先，不缓存 ==========
+            {
+              urlPattern: /^https:\/\/.*\.supabase\.co\/storage\/v1\/object\/public\/diary-videos\/.*/i,
+              handler: 'NetworkOnly',
+              options: {
+                // 视频不缓存，避免 Range 请求导致的缓存问题
+              }
+            },
+            // ========== Supabase Storage (图片) - 缓存优先 ==========
             {
               urlPattern: /^https:\/\/.*\.supabase\.co\/storage\/v1\/object\/public\/.*/i,
               handler: 'CacheFirst',
@@ -122,9 +130,7 @@ export default defineConfig(({ command, mode }) => {
                 },
                 cacheableResponse: {
                   statuses: [0, 200]
-                },
-                // 范围请求支持（视频播放）
-                rangeRequests: true
+                }
               }
             },
             // ========== Supabase Auth API - 网络优先 ==========

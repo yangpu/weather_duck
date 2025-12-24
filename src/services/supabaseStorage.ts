@@ -1,5 +1,38 @@
 import { supabase, STORAGE_BUCKETS, SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/supabase'
 
+// 视频 MIME 类型映射
+const VIDEO_MIME_TYPES: Record<string, string> = {
+  'mp4': 'video/mp4',
+  'webm': 'video/webm',
+  'ogg': 'video/ogg',
+  'mov': 'video/quicktime',
+  'avi': 'video/x-msvideo',
+  'mkv': 'video/x-matroska',
+  'm4v': 'video/x-m4v',
+  '3gp': 'video/3gpp',
+  'wmv': 'video/x-ms-wmv',
+  'flv': 'video/x-flv'
+}
+
+/**
+ * 根据文件扩展名获取正确的 MIME 类型
+ */
+function getCorrectMimeType(file: File): string {
+  // 如果文件已有有效的 MIME 类型，直接使用
+  if (file.type && file.type !== 'application/octet-stream') {
+    return file.type
+  }
+  
+  // 根据扩展名推断 MIME 类型
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  if (ext && VIDEO_MIME_TYPES[ext]) {
+    return VIDEO_MIME_TYPES[ext]
+  }
+  
+  // 默认返回文件类型或通用类型
+  return file.type || 'application/octet-stream'
+}
+
 /**
  * Supabase存储服务 - 优化版本
  * 支持批量上传、用户隔离、真实上传进度
@@ -63,7 +96,8 @@ export class SupabaseStorageService {
       xhr.setRequestHeader('Authorization', `Bearer ${SUPABASE_ANON_KEY}`)
       xhr.setRequestHeader('apikey', SUPABASE_ANON_KEY)
       xhr.setRequestHeader('x-upsert', 'false')
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+      // 使用正确的 MIME 类型，确保视频能正常播放
+      xhr.setRequestHeader('Content-Type', getCorrectMimeType(file))
       xhr.setRequestHeader('Cache-Control', 'max-age=3600')
       
       xhr.send(file)

@@ -51,8 +51,14 @@
       <!-- 视频展示 -->
       <div class="diary-video" v-if="diaryData.videos && diaryData.videos.length > 0">
         <h3 class="content-title">视频记录</h3>
-        <div v-for="(video, index) in diaryData.videos" :key="index" class="video-item">
-          <video :src="video" controls class="video-player">
+        <div v-for="(video, index) in diaryData.videos" :key="`video-${videoKey}-${index}`" class="video-item">
+          <video 
+            controls 
+            playsinline
+            preload="metadata"
+            class="video-player"
+            :src="video"
+          >
             您的浏览器不支持视频播放
           </video>
         </div>
@@ -129,6 +135,7 @@ const emit = defineEmits<Emits>()
 const diaryData = ref<WeatherDiary | null>(null)
 const imagePreviewVisible = ref(false)
 const previewIndex = ref(0)
+const videoKey = ref(0) // 用于强制刷新视频组件
 const isRefreshing = ref(false)
 
 // 立即检查并设置日记数据
@@ -224,13 +231,51 @@ const hasNextDay = computed(() => {
   return idx >= 0 && idx < len - 1
 })
 
+// 停止所有视频播放并释放资源
+function stopAllVideos() {
+  const videos = document.querySelectorAll('.diary-video video')
+  videos.forEach((video) => {
+    const v = video as HTMLVideoElement
+    v.pause()
+    v.currentTime = 0
+  })
+}
+
+// 清理视频缓存（解决 Service Worker 缓存 Range 请求的问题）
+async function clearVideoCacheForUrls(videoUrls: string[]) {
+  if (!('caches' in window) || !videoUrls.length) return
+  
+  try {
+    const cacheNames = await caches.keys()
+    for (const cacheName of cacheNames) {
+      const cache = await caches.open(cacheName)
+      for (const url of videoUrls) {
+        await cache.delete(url)
+      }
+    }
+  } catch (e) {
+    console.warn('清理视频缓存失败:', e)
+  }
+}
+
 // 监听对话框打开，加载日记
-watch(() => props.visible, async (newVisible) => {
+watch(() => props.visible, async (newVisible, oldVisible) => {
   if (newVisible) {
+    // 强制刷新视频组件
+    videoKey.value++
+    
     // 立即尝试初始化数据，如果失败再异步加载
     if (!initializeDiaryData()) {
       await loadDiary()
     }
+    
+    // 清理可能被错误缓存的视频
+    if (diaryData.value?.videos?.length) {
+      await clearVideoCacheForUrls(diaryData.value.videos)
+    }
+  } else if (oldVisible && !newVisible) {
+    // 对话框关闭时停止视频
+    stopAllVideos()
   }
 }, { immediate: true })
 
@@ -374,10 +419,14 @@ function handleDateChange(date: string) {
 }
 
 function handleClose() {
+  stopAllVideos()
   emit('update:visible', false)
 }
 
 function handleVisibleChange(value: boolean) {
+  if (!value) {
+    stopAllVideos()
+  }
   emit('update:visible', value)
 }
 </script>
